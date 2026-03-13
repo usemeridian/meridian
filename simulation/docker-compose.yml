@@ -1,0 +1,6 @@
+services:
+  simulator:
+    build:
+      context: ..
+      dockerfile: simulation/Dockerfile
+    command: bash /meridian/simulation/simulate.sh

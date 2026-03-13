@@ -1,0 +1,62 @@
+# Meridian — self-hosted deployment for your team context repo.
+# Run: docker compose up -d
+# Docs: https://github.com/usemeridian/meridian
+
+services:
+  meridian:
+    image: ghcr.io/usemeridian/meridian:latest
+    container_name: meridian
+    restart: unless-stopped
+    environment:
+      MERIDIAN_MODE: all-in-one
+      MERIDIAN_TENANT_ID: ${MERIDIAN_TENANT_ID:-default}
+
+      # Slack
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
+      SLACK_DIGEST_CHANNEL: ${SLACK_DIGEST_CHANNEL:-}
+      MERIDIAN_SLACK_WEBHOOK: ${MERIDIAN_SLACK_WEBHOOK:-}
+
+      # Exclude repos from digests/queries (comma-separated, case-insensitive)
+      MERIDIAN_EXCLUDE_REPOS: ${MERIDIAN_EXCLUDE_REPOS:-}
+
+      # Telemetry (opt-in, sends anonymous usage data to improve Meridian)
+      MERIDIAN_TELEMETRY: ${MERIDIAN_TELEMETRY:-false}
+
+      # GitHub signals
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+
+      # Intercom signals
+      INTERCOM_TOKEN: ${INTERCOM_TOKEN:-}
+      MERIDIAN_INTERCOM_TAGS: ${MERIDIAN_INTERCOM_TAGS:-}
+
+      # LLM
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      MERIDIAN_LLM_MODEL: ${MERIDIAN_LLM_MODEL:-claude-sonnet-4-5-20250929}
+
+      # Embeddings (for semantic search — falls back to keyword search without these)
+      # Option A: OpenAI
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Option B: Azure OpenAI
+      AZURE_OPENAI_EMBEDDING_ENDPOINT: ${AZURE_OPENAI_EMBEDDING_ENDPOINT:-}
+      AZURE_OPENAI_EMBEDDING_KEY: ${AZURE_OPENAI_EMBEDDING_KEY:-}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:-text-embedding-3-small}
+
+      # Encryption — generate with: openssl rand -base64 32
+      MERIDIAN_ENCRYPTION_KEY: ${MERIDIAN_ENCRYPTION_KEY:-}
+
+      # Scheduling
+      MERIDIAN_DIGEST_SCHEDULE: ${MERIDIAN_DIGEST_SCHEDULE:-0 8 * * 1}
+      MERIDIAN_SIGNAL_SCHEDULE: ${MERIDIAN_SIGNAL_SCHEDULE:-0 6 * * *}
+
+      # Team context repo (mounted at /data/team-context for git pull)
+      MERIDIAN_TEAM_CONTEXT_DIR: /data/team-context
+      MERIDIAN_JOURNALS_DIR: /data/team-context/journals
+    volumes:
+      - ${MERIDIAN_TEAM_CONTEXT_PATH:-..}:/data/team-context
+      - meridian-data:/home/node/.claude/meridian
+    ports:
+      - "3141:3141"
+
+volumes:
+  meridian-data:
