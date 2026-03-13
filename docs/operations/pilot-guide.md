@@ -1,4 +1,4 @@
-# Dogfooding Guide -- Running a Meridian Pilot
+# Running a Meridian Pilot
 
 This is the playbook for piloting Meridian with a real team. It covers what you're proving, how to roll out in phases, and how to know if it's working.
 
@@ -79,14 +79,13 @@ Build/connect in this order. Each step makes the digest more valuable.
 | 1 | Digest engine + Slack delivery | **Available** | Completes the vertical slice. Nothing works without this. |
 | 1.5 | Slack bot (decision trail queries) | **Available** | Immediate team value — anyone can query the decision trail without installing anything. |
 | 2 | Intercom | **Available** | Support signal is the fastest path to "the digest told me something I'd miss." Requires `INTERCOM_TOKEN` and optionally `MERIDIAN_INTERCOM_TAGS` to filter by conversation tags. |
-| 3 | GitHub signals | **Available** | Issues, PRs, and CI data. Configure via `MERIDIAN_GITHUB_REPOS`. |
-| 4 | Aha! | **Planned** | PM intent flowing into engineering context closes the biggest information gap. Not yet implemented — tracked in issue #45. |
-| 5 | ADO | **Planned** | Engineering work items complement GitHub PR/CI data. Not yet implemented. |
-| 6 | PostHog | **Internal only** | Not a signal source connector. Used for Meridian's own product telemetry (opt-in via `MERIDIAN_TELEMETRY`). |
-| 7 | Figma | **Planned** | Design rationale. Lower urgency, higher long-term value. Not yet implemented. |
-| 8 | Pendo | **Planned** | Adoption signal. Nice-to-have. Not yet implemented. |
+| 3 | GitHub signals | **Available** | Issues, PRs, and CI data. Configure via `meridian pull github --configure`. |
+| 4 | Notion | **Available** | Pages, databases, and comments. Product context and design decisions. Configure via `meridian pull notion --configure`. |
+| 5 | Linear / Jira | **Planned** | PM intent flowing into engineering context closes the biggest information gap. [Contributions welcome.](../../CONTRIBUTING.md) |
+| 6 | Slack (as signal source) | **Planned** | Channel decisions and context. Different from digest delivery — this pulls signals from Slack conversations. |
+| 7 | Figma | **Planned** | Design rationale. Lower urgency, higher long-term value. |
 
-The available connectors today are Slack (digest + bot), Intercom, and GitHub. Aha!, ADO, Figma, and Pendo are planned but not yet implemented. PostHog is not a signal connector — it's internal product telemetry.
+The available connectors today are Slack (digest + bot), Intercom, GitHub, and Notion. See the [signal source roadmap](../architecture/signal-source-roadmap.md) for the full list and contributor guide.
 
 ## Success Criteria
 
