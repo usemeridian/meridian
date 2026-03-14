@@ -11,7 +11,7 @@ Meridian has three phases: **capture**, **index**, and **deliver**. Data enters 
 ```mermaid
 flowchart TD
     subgraph capture ["CAPTURE (write time)"]
-        J["AI session journals<br/><code>~/.claude/memory/journal/</code><br/>YYYY-MM-DD-greg.md"]
+        J["AI session journals<br/><code>~/.claude/memory/journal/</code><br/>YYYY-MM-DD-alice.md"]
         C["Conversation transcripts<br/><code>~/.claude/projects/**/*.jsonl</code><br/>LLM extracts decisions at session end"]
         S["Signal connectors<br/><code>~/.claude/meridian/signals/</code><br/>github/ · intercom/ · *-summary.md"]
         T["Team context repo<br/><code>team-context/journals/</code><br/>aggregated from all team members"]
@@ -54,8 +54,8 @@ Data enters Meridian from four sources, all as plain markdown files. No database
 Engineers use AI coding assistants (Claude Code, Cursor, etc.) with Meridian's session protocol. At session end, the AI writes a journal entry:
 
 ```markdown
-## browser-app-v2 — Fix auth token refresh race condition
-**Author:** nick
+## api-service — Fix auth token refresh race condition
+**Author:** alice
 **Why:** Users seeing intermittent 401s after token expiry
 **What:** Added mutex around token refresh, fixed retry logic
 **Outcome:** No more 401 cascades in staging

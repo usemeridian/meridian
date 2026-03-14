@@ -178,7 +178,7 @@ See [LICENSING.md](LICENSING.md) for details.
 - [Principles](docs/architecture/architecture-principles.md) — the eight constraints
 - [Content Store](docs/architecture/content-store.md) — indexing, search, schema
 - [Signal Channels](docs/architecture/architecture-signal-channels.md) — connector architecture
-- [Signal Roadmap](docs/architecture/signal-source-roadmap.md) — planned connectors
+
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Context
 
-Signal channels pipe external reality into Meridian: support tickets, customer health, CI/CD events, analytics, chat decisions, project management. They feed persona-appropriate digests. This document decides how signal ingestion works, what it costs, and what ships first.
+Signal channels pipe external reality into Meridian: support tickets, customer health, CI/CD events, analytics, chat decisions, project management. They feed persona-appropriate digests. This document decides how signal ingestion works and what ships first.
 
 ---
 
@@ -13,16 +13,16 @@ Signal channels pipe external reality into Meridian: support tickets, customer h
 Meridian runs a cloud service that receives webhooks and polls third-party APIs. Team authenticates once, signals flow continuously.
 
 - **Pros**: Webhooks just work (public endpoint exists). No infrastructure for the team to run. Consistent uptime.
-- **Cons**: Contradicts "plain files you own." Meridian stores customer API tokens and signal data. Adds cloud ops burden to a bootstrapped product. Privacy-sensitive teams (healthcare, finance) may refuse.
-- **Cost**: Meridian bears compute, storage, and API costs per team. LLM summarization adds per-request cost.
+- **Cons**: Contradicts "plain files you own." Meridian stores user API tokens and signal data. Adds significant cloud ops burden. Privacy-sensitive teams (healthcare, finance) may refuse.
+- **Operational overhead**: Requires cloud compute, storage, and API infrastructure. LLM summarization adds per-request load.
 
 ### Option B: Self-Hosted
 
 Everything runs on the team's infrastructure. Meridian ships connectors as CLI commands or scripts. User runs them via cron, CI, or manually.
 
-- **Pros**: Full alignment with "plain files you own." Zero cloud infra for Meridian. No credential custody. Privacy by default. Signal count is irrelevant to pricing — user's compute, user's problem.
+- **Pros**: Full alignment with "plain files you own." Zero cloud infra for Meridian. No credential custody. Privacy by default. Signal volume is bounded only by the user's own compute.
 - **Cons**: Webhooks require the team to expose an endpoint (or use a tunnel). More setup friction. Reliability depends on the team.
-- **Cost**: Meridian bears zero per-signal cost. User bears compute (negligible for polling) and LLM tokens (their own API key or included in the team tier).
+- **Operational overhead**: Zero server-side infrastructure. User provides compute (negligible for polling) and LLM API key.
 
 ### Option C: Hybrid (Recommended)
 
@@ -30,7 +30,7 @@ Core runs locally (state files, digests, context). Signal ingestion is primarily
 
 - **Pros**: Default path is self-hosted (aligned with philosophy). Cloud relay is opt-in, scoped to webhook reception only — no credential custody for poll-based signals. Minimizes Meridian's infrastructure. Teams that can self-host everything do; teams that need webhooks get a thin relay.
 - **Cons**: Two paths to maintain. Relay still needs infrastructure (though minimal).
-- **Cost**: Meridian runs a stateless webhook relay (low cost per team). Everything else is user-side.
+- **Operational overhead**: Requires a stateless webhook relay (minimal infrastructure). Everything else runs user-side.
 
 ---
 
@@ -42,9 +42,9 @@ The CLI polls APIs on demand and writes signal data to local markdown files in a
 
 **Optional: cloud webhook relay for push-only signals.**
 
-A thin relay service receives webhooks, buffers events, and exposes them via a pull endpoint. The CLI then pulls from the relay instead of the source API. The relay stores nothing permanently — events expire after 72 hours. This is a paid add-on for the Team tier.
+A thin relay service receives webhooks, buffers events, and exposes them via a pull endpoint. The CLI then pulls from the relay instead of the source API. The relay stores nothing permanently — events expire after 72 hours.
 
-**Why this wins for MVP**: Meridian (the company) runs zero infrastructure for the default path. The target market — small technical teams — can run a cron job. Webhook relay ships later, only if demand justifies it.
+**Why this wins for MVP**: Meridian requires zero server infrastructure for the default path. Small technical teams can run a cron job. Webhook relay ships later, only if demand justifies it.
 
 **The CLI contract:**
 
@@ -136,7 +136,7 @@ Ship four channels in the first release. Selection criteria: high value to small
 
 ### Implementation Order
 
-GitHub shipped first (established the connector pattern). Intercom shipped second (first external support signal). Notion shipped third (documentation and project management signal). Next: Linear (Tier 1 ICP choice), then Slack as signal source (Tier 2). Each channel follows the same pattern: auth config, pull command, markdown output, digest integration.
+GitHub shipped first (established the connector pattern). Intercom shipped second (first external support signal). Notion shipped third (documentation and project management signal). Next: Linear, then Slack as signal source. Each channel follows the same pattern: auth config, pull command, markdown output, digest integration.
 
 ### Connector Interface
 

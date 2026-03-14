@@ -14,7 +14,6 @@ This folder contains documentation for Meridian — the team context layer for A
 | [architecture-principles.md](architecture/architecture-principles.md) | Eight principles that constrain every design decision: integration platform, data portability, design for forwarding, local-first hosted path. | Building features, designing connectors, or making architectural choices. |
 | [architecture-signal-channels.md](architecture/architecture-signal-channels.md) | How signal ingestion works: CLI-first polling, hybrid architecture, cost model, MVP channels, connector interface. | Building or extending signal connectors. |
 | [content-store.md](architecture/content-store.md) | Content store architecture: indexing (full-text + semantic), searching, CLI reference, storage schema. | Working on the content store, search, or bot features. |
-| [signal-source-roadmap.md](architecture/signal-source-roadmap.md) | Signal source integration roadmap: planned connectors, API research, contributor guide. | Contributing a new signal connector or evaluating integration priorities. |
 
 ---
 
@@ -34,6 +33,7 @@ This folder contains documentation for Meridian — the team context layer for A
 | Doc | What it covers | Read if you're... |
 |-----|---------------|-------------------|
 | [FAQ.md](FAQ.md) | Setup, configuration, known issues, troubleshooting. | Getting started, hitting a snag, or looking for quick answers. |
+| [BOOTSTRAP_PROMPT.md](../../BOOTSTRAP_PROMPT.md) | Copy-paste prompt to set up Meridian in a new Claude Code session. | Setting up Meridian for the first time. |
 
 ---
 

@@ -33,19 +33,23 @@ These are separate because personal state includes settings, credentials referen
 
 ### Setup
 
+**Automated:** Meridian ships a setup script that handles cloning, initial sync, hook installation, and hook registration in one command:
+
 ```bash
-# 1. Create a private repo on GitHub (or your git host)
+# 1. Create a private repo on GitHub (MANUAL — you do this yourself)
 #    e.g., github.com/youruser/claude-state (private)
 
-# 2. Clone it locally
-mkdir -p ~/repos/personal
-git clone git@github.com:youruser/claude-state.git ~/repos/personal/claude-state
-
-# 3. Create the sync script (see below)
-# 4. Wire it into session hooks for automatic backup
+# 2. Run the Meridian backup setup (AUTOMATED — does steps 2-4 for you)
+bash backup/setup.sh git@github.com:youruser/claude-state.git
 ```
 
-### Sync script
+This clones the repo to `~/.claude-backup/`, runs an initial sync, installs session hooks, and registers them in `~/.claude/settings.json`.
+
+The manual steps below show what the setup script does under the hood, for reference.
+
+### Sync script (reference)
+
+> **Note:** This is a reference implementation showing the sync logic. Meridian ships its own hook scripts in `backup/hooks/` (`session-start.sh` and `session-end.sh`) that are installed automatically by `backup/setup.sh`. You do not need to create this script manually.
 
 The sync script copies files between `~/.claude/` and the backup repo. Two modes: `backup` (local → repo) and `restore` (repo → local).
 
@@ -130,6 +134,8 @@ esac
 
 ### Automating backup via session hooks
 
+> **Note:** If you ran `backup/setup.sh`, the hooks below are already installed and registered. This section shows the hook configuration for reference — no manual editing needed.
+
 Add to `~/.claude/settings.json` under `hooks`:
 
 ```json
@@ -159,7 +165,13 @@ With this setup, every Claude Code session automatically pulls the latest backup
 
 ### New machine restore
 
+> **Manual step:** Clone the repo, then re-run the setup script. It detects the existing backup and restores from it.
+
 ```bash
+# If using backup/setup.sh:
+bash backup/setup.sh git@github.com:youruser/claude-state.git
+
+# If using the reference sync script:
 git clone git@github.com:youruser/claude-state.git ~/repos/personal/claude-state
 cd ~/repos/personal/claude-state && ./sync.sh restore
 ```
@@ -183,11 +195,13 @@ The team context repo aggregates the context that feeds cross-team digests:
 
 ### Setup
 
+> **Manual:** The team context repo requires manual creation and structuring. Meridian's `meridian context init` command can register an existing team context repo, but the repo itself and its directory structure are created by you.
+
 ```bash
-# 1. Create an org-level repo (can be private or internal)
+# 1. Create an org-level repo (MANUAL — you do this on GitHub)
 #    e.g., github.com/yourorg/team-context
 
-# 2. Structure
+# 2. Structure (MANUAL — create these directories yourself)
 team-context/
   journals/
     greg/          # Each contributor gets a directory
@@ -206,6 +220,8 @@ team-context/
 ```
 
 ### How journals flow into the team repo
+
+> **Automated:** `meridian journal sync` handles copying authored journals to the team context repo. The snippet below shows the underlying logic for reference.
 
 Each contributor's session-end hook pushes their journal entries to the team repo. The simplest approach:
 

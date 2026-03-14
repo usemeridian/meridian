@@ -1,4 +1,4 @@
-# Running a Meridian Pilot
+# Dogfooding Guide -- Running a Meridian Pilot
 
 This is the playbook for piloting Meridian with a real team. It covers what you're proving, how to roll out in phases, and how to know if it's working.
 
@@ -6,7 +6,7 @@ This is the playbook for piloting Meridian with a real team. It covers what you'
 
 One sentence: **The PM reads a digest that tells them something they didn't know, sourced from signals they didn't manually compile.**
 
-That's the proof point. Everything in this guide works backward from it. If the PM forwards the digest or references it in a meeting, you've won. If they check it before the project board, you're close.
+That's the proof point. Everything in this guide works backward from it. If the PM forwards the digest or references it in a meeting, Meridian is delivering real value. If they check it before the project board, you're close.
 
 The digest that gets forwarded looks like this: "3 support tickets mention login timeout (Intercom), Feature X is 'on track' in Aha! but the last 2 PRs surfaced open questions (GitHub), and CI failed twice on the auth branch." That's cross-signal context no one assembled by hand.
 
@@ -21,7 +21,7 @@ No team setup. No integrations. One person, one repo.
 3. Work normally. Sessions now start with "Resuming..." instead of cold start.
 4. End sessions properly (say "done" or "pause") so context persists.
 
-This is the PLG entry point. The engineer gets value immediately -- no coordination cost, no buy-in required from anyone else. They stop losing context between sessions. That's enough to keep going.
+This is the lowest-friction starting point. The engineer gets value immediately -- no coordination cost, no buy-in required from anyone else. They stop losing context between sessions. That's enough to keep going.
 
 **Exit criteria:** The engineer voluntarily uses Meridian for 3+ sessions in a row without being reminded.
 
@@ -34,7 +34,7 @@ This is the PLG entry point. The engineer gets value immediately -- no coordinat
 3. The engineering digest starts posting automatically from journal entries.
 4. Other team members see it without installing anything.
 
-The key insight: only one person needs to install Meridian for the whole team to see the digest. The digest is the viral mechanism -- it shows up in Slack where everyone already is.
+The key insight: only one person needs to install Meridian for the whole team to see the digest. It shows up in Slack where everyone already is, so the rest of the team gets value without installing anything.
 
 **Exit criteria:** A non-engineer (PM, designer, lead) reads the digest without being asked to.
 
@@ -79,13 +79,14 @@ Build/connect in this order. Each step makes the digest more valuable.
 | 1 | Digest engine + Slack delivery | **Available** | Completes the vertical slice. Nothing works without this. |
 | 1.5 | Slack bot (decision trail queries) | **Available** | Immediate team value — anyone can query the decision trail without installing anything. |
 | 2 | Intercom | **Available** | Support signal is the fastest path to "the digest told me something I'd miss." Requires `INTERCOM_TOKEN` and optionally `MERIDIAN_INTERCOM_TAGS` to filter by conversation tags. |
-| 3 | GitHub signals | **Available** | Issues, PRs, and CI data. Configure via `meridian pull github --configure`. |
-| 4 | Notion | **Available** | Pages, databases, and comments. Product context and design decisions. Configure via `meridian pull notion --configure`. |
-| 5 | Linear / Jira | **Planned** | PM intent flowing into engineering context closes the biggest information gap. [Contributions welcome.](../../CONTRIBUTING.md) |
-| 6 | Slack (as signal source) | **Planned** | Channel decisions and context. Different from digest delivery — this pulls signals from Slack conversations. |
-| 7 | Figma | **Planned** | Design rationale. Lower urgency, higher long-term value. |
+| 3 | GitHub signals | **Available** | Issues, PRs, and CI data. Configure via `MERIDIAN_GITHUB_REPOS`. |
+| 4 | Aha! | **Planned** | PM intent flowing into engineering context closes the biggest information gap. Not yet implemented — tracked in issue #45. |
+| 5 | ADO | **Planned** | Engineering work items complement GitHub PR/CI data. Not yet implemented. |
+| 6 | PostHog | **Internal only** | Not a signal source connector. Used for Meridian's own product telemetry (opt-in via `MERIDIAN_TELEMETRY`). |
+| 7 | Figma | **Planned** | Design rationale. Lower urgency, higher long-term value. Not yet implemented. |
+| 8 | Pendo | **Planned** | Adoption signal. Nice-to-have. Not yet implemented. |
 
-The available connectors today are Slack (digest + bot), Intercom, GitHub, and Notion. See the [signal source roadmap](../architecture/signal-source-roadmap.md) for the full list and contributor guide.
+The available connectors today are Slack (digest + bot), Intercom, and GitHub. Aha!, ADO, Figma, and Pendo are planned but not yet implemented. PostHog is not a signal connector — it's internal product telemetry.
 
 ## Success Criteria
 
@@ -95,7 +96,7 @@ The available connectors today are Slack (digest + bot), Intercom, GitHub, and N
 | Week 1-2 | Slack bot answers a decision trail question that saves someone from digging through PRs or journals. |
 | Week 2 | Engineering digest posts to Slack. At least one non-engineer reads it. |
 | Week 4 | PM reads the digest without being asked. Checks it before the project board. |
-| Week 6 | PM forwards the digest or references it in a meeting. This is the conversion proof point. |
+| Week 6 | PM forwards the digest or references it in a meeting. This is the clearest sign of lasting value. |
 | Ongoing | The digest surfaces something the team would have missed. Bugs from support appear before someone files a ticket. Drift between roadmap and reality is detected before demo day. |
 
 ## How to Measure
@@ -107,4 +108,4 @@ Four questions. If you can answer "yes" to the first three, the pilot is working
 3. **Did the team act on something from the digest they wouldn't have seen otherwise?** A decision, a priority change, a bug caught early. One concrete example is enough.
 4. **How often do engineers persist context?** Track whether engineers end sessions properly vs. skip them. Adoption stalls if the input side (journals) dries up.
 
-Don't over-instrument. The proof point is qualitative: someone who didn't compile the information acts on it. If that happens, you have product-market fit signal. If it doesn't happen by week 6, the digest content isn't valuable enough yet -- add more signal sources or improve the synthesis.
+Don't over-instrument. The proof point is qualitative: someone who didn't compile the information acts on it. If that happens, Meridian is working for your team. If it doesn't happen by week 6, the digest content isn't valuable enough yet -- add more signal sources or improve the synthesis.

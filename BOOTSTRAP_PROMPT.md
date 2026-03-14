@@ -93,6 +93,10 @@ In any repo you work in, run:
 Claude will create `.claude/team-state.md` (shared) and `.claude/personal-state.md`
 (gitignored), fix your `.gitignore`, and register the repo in your global index.
 
+This is idempotent — safe to run multiple times on the same repo. In a team
+environment, only one team member needs to run it per repo (it creates the shared
+`team-state.md` that gets committed).
+
 ---
 
 ## For Cursor users

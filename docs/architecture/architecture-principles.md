@@ -40,7 +40,7 @@ The displacement path exists but is earned, not forced. As the context layer bec
 
 Every output Meridian produces -- digests, reports, dashboards, summaries -- must be good enough that someone would forward it to their boss. The digest an engineer receives should be something they'd send to their PM unprompted. The weekly summary should be boardroom-ready without editing.
 
-**Why it matters:** Forwarding is the conversion mechanism. The person who installs Meridian is an engineer. The people who pay for it are engineering leaders. The bridge between them is a digest that lands in Slack and gets forwarded up. If the output needs editing before sharing, the viral loop breaks.
+**Why it matters:** Output quality is measured by shareability. If a digest needs editing before an engineer would send it to their PM, or a weekly summary needs rewriting before it goes to leadership, the output failed. Outputs that travel across roles without modification prove that the system understands what matters to each audience. Outputs that stay in one person's inbox prove the opposite.
 
 **Anti-pattern:** Raw data dumps that require interpretation. Outputs that only make sense to the person who configured them. Digests full of jargon that can't leave the engineering channel. "Here are 47 commits from this week."
 
@@ -70,7 +70,7 @@ The same underlying data -- decision trail plus signal channels -- generates dif
 
 Every capability works locally on plain files. The hosted layer adds team-scale value -- aggregation, automation, dashboards -- not individual-scale features. The local version is never artificially limited.
 
-**Why it matters:** The free tier must be genuinely useful, not a demo. An engineer who installs Meridian and finds artificial limits will vibe-code around them before lunch. The local version earns trust by being complete. The hosted version earns revenue by solving problems that a single machine cannot: searching across a team's journals, running digests on a schedule, rendering insights in a browser.
+**Why it matters:** The local version must be genuinely useful, not a demo. An engineer who installs Meridian and finds artificial limits will vibe-code around them before lunch. The local version earns trust by being complete. The hosted version solves problems that a single machine cannot: searching across a team's journals, running digests on a schedule, rendering insights in a browser.
 
 **Architecture seam:** Every module separates the query interface (what you ask for) from the backend (where data lives). Today the backend is local files. Tomorrow it is an HTTP API. Same module interface, different transport. This seam is designed in from day one, not retrofitted.
 
@@ -87,7 +87,7 @@ The hosted layer adds things that a single machine cannot do alone:
 - **Automation** — scheduled digests, continuous indexing, webhook-triggered pulls
 - **Dashboards** — web UI for drift trends, repo activity, tag clouds, timeline views
 
-These are team-scale capabilities. They require infrastructure. They justify a subscription.
+These are team-scale capabilities. They require infrastructure that a single machine cannot provide.
 
 **Architecture seam details:**
 
@@ -95,15 +95,9 @@ Every module is designed so the backend is swappable:
 
 - **Content store**: `loadIndex()` / `saveIndex()` today read/write JSON files. Tomorrow they can hit an HTTP API. The query interface (`searchJournals`, `queryMetadata`, `extractInsights`) stays the same.
 - **Signal connectors**: `pull()` returns structured data. Today it writes markdown files locally. A hosted version writes to a team store.
-- **Digest engine**: `generateDigest()` calls an LLM provider. Today that is your API key. Hosted uses a shared key and bills credits.
+- **Digest engine**: `generateDigest()` calls an LLM provider. Today that is your API key. Hosted provides managed LLM access without key management.
 
 The seam is the module interface. Swap the backend, keep the contract.
-
-**Conversion triggers:**
-
-Conversion is natural. It happens when a user hits a real limitation of the local version, not an artificial paywall:
-
-Nobody hits a paywall. They hit a use case that requires infrastructure.
 
 **What this means in practice:**
 

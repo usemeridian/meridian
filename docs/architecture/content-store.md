@@ -151,7 +151,7 @@ Embeddings work with both OpenAI (`OPENAI_API_KEY`) and Azure OpenAI (`AZURE_OPE
       "title": "Implement signal connectors",
       "user": "",
       "source": "journal",
-      "author": "greg",
+      "author": "alice",
       "drifted": false,
       "contentHash": "a1b2c3d4e5f67890",
       "contentLength": 512,
