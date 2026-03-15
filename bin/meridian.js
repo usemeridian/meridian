@@ -4,6 +4,7 @@ const { spawnSync, spawn: spawnChild } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const os = require('os');
 const http = require('http');
 const readline = require('readline');
 
@@ -3933,6 +3934,95 @@ const COMMANDS = {
     desc: 'View your decision quality profile and elicitation focus',
     run: (args) => runQuality(args),
   },
+  'sync-public': {
+    desc: 'Sync code to the public usemeridian/meridian repo',
+    run: () => {
+      const tmpDir = path.join(os.tmpdir(), 'meridian-public-sync');
+      const publicRepo = 'https://github.com/usemeridian/meridian.git';
+
+      // Clone or pull public repo
+      if (fs.existsSync(tmpDir)) {
+        console.log('Updating existing clone...');
+        const pullResult = spawnSync('git', ['pull', '--rebase'], { cwd: tmpDir, stdio: 'inherit' });
+        if (pullResult.status !== 0) {
+          console.error('git pull failed — try removing ' + tmpDir);
+          process.exit(1);
+        }
+      } else {
+        console.log('Cloning usemeridian/meridian...');
+        const cloneResult = spawnSync('git', ['clone', publicRepo, tmpDir], { stdio: 'inherit' });
+        if (cloneResult.status !== 0) {
+          console.error('Clone failed — check your GitHub access to usemeridian/meridian');
+          process.exit(1);
+        }
+      }
+
+      // Files and directories to sync
+      const syncItems = [
+        'bin/', 'templates/', 'specializations/', 'tests/', 'simulation/',
+        'Dockerfile', 'package.json', 'setup.sh', 'install.sh', 'uninstall.sh',
+        'doctor.sh', 'journal-summary.sh', 'BOOTSTRAP_PROMPT.md',
+      ];
+
+      // Also sync public-staging docs if they exist
+      const publicDocsDir = path.join(ROOT, 'public-staging', 'docs');
+
+      console.log('Syncing files...');
+      for (const item of syncItems) {
+        const isDir = item.endsWith('/');
+        const name = item.replace(/\/$/, '');
+        const src = path.join(ROOT, name);
+        if (!fs.existsSync(src)) continue;
+        if (isDir) {
+          // rsync without trailing slash on source copies the directory itself into dest
+          const result = spawnSync('rsync', ['-a', '--delete', src, tmpDir + '/'], { stdio: 'inherit' });
+          if (result.status !== 0) console.error(`Failed to sync ${item}`);
+        } else {
+          const result = spawnSync('cp', [src, path.join(tmpDir, name)], { stdio: 'inherit' });
+          if (result.status !== 0) console.error(`Failed to sync ${item}`);
+        }
+      }
+
+      // Sync public-staging docs to docs/
+      if (fs.existsSync(publicDocsDir)) {
+        spawnSync('rsync', ['-a', '--delete', publicDocsDir + '/', path.join(tmpDir, 'docs') + '/'], { stdio: 'inherit' });
+      }
+
+      // Show what changed
+      const diffResult = spawnSync('git', ['status', '--short'], { cwd: tmpDir, stdio: 'pipe' });
+      const changes = (diffResult.stdout || '').toString().trim();
+
+      if (!changes) {
+        console.log('Public repo is already up to date.');
+        return;
+      }
+
+      console.log('\nChanges to push:');
+      console.log(changes);
+
+      // Get version for commit message
+      let version = 'unknown';
+      try { version = require(path.join(ROOT, 'package.json')).version; } catch {}
+
+      // Commit and push
+      spawnSync('git', ['add', '-A'], { cwd: tmpDir, stdio: 'inherit' });
+      const commitResult = spawnSync('git', ['commit', '-m', `Sync v${version} from private repo`], { cwd: tmpDir, stdio: 'inherit' });
+      if (commitResult.status !== 0) {
+        console.error('Commit failed');
+        process.exit(1);
+      }
+
+      console.log('Pushing to usemeridian/meridian...');
+      const pushResult = spawnSync('git', ['push'], { cwd: tmpDir, stdio: 'inherit' });
+      if (pushResult.status !== 0) {
+        console.error('Push failed — check your access to usemeridian/meridian');
+        process.exit(1);
+      }
+
+      console.log(`\nSynced v${version} to usemeridian/meridian`);
+      console.log('GitHub Actions will publish npm + Docker automatically.');
+    },
+  },
   help: {
     desc: 'Show this help message',
     run: () => showHelp(),
@@ -4021,6 +4111,9 @@ function showHelp() {
   console.log('  meridian status --write        Rebuild Active Projects in global-state.md');
   console.log('  meridian status --json         Machine-readable output');
   console.log('  meridian status --quiet        Suppress output (for hooks)');
+  console.log('');
+  console.log('Publishing:');
+  console.log('  meridian sync-public           Sync code to usemeridian/meridian (triggers npm + Docker publish)');
   console.log('');
   console.log('Content store:');
   console.log('  meridian index-journals                        Index journal entries');

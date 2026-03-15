@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Meridian — Installer
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/usemeridian/meridian/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/leizerowicz/meridian/main/install.sh | bash
 #   MERIDIAN_VERSION=v1.1.0 bash install.sh   # Install specific version
 #   bash install.sh --force                    # Force reinstall even if same version
 
 set -euo pipefail
 
-REPO="usemeridian/meridian"
+REPO="leizerowicz/meridian"
 VERSION="${MERIDIAN_VERSION:-main}"
 TMP_DIR="$(mktemp -d)"
 FORCE=false

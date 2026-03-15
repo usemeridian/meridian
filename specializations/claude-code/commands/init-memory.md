@@ -45,6 +45,21 @@ Last updated: [today's date]
 ## Current Sprint Focus
 <!-- Team-level "what are we working on right now" -->
 
+## Elicitation Prompts
+
+<!-- These prompts guide the AI to capture richer context at decision moments.
+     The answers aren't for you — they're for your teammates who read the digest. -->
+
+When a technical or product decision is made without stated reasoning, ask one of:
+- "What alternatives did you consider?"
+- "What constraint or requirement drove this choice?"
+- "What would need to change for you to reverse this decision?"
+- "Who else on the team does this affect, and how?"
+- "What's the risk if this assumption is wrong?"
+
+Do not ask if the decision already includes reasoning, tradeoffs, or constraints.
+Do not ask more than once per decision. Do not ask during routine implementation.
+
 ## Shared Gotchas
 <!-- Hard-won lessons. What surprised us. What NOT to do. -->
 ```

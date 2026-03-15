@@ -9,7 +9,8 @@ services:
     restart: unless-stopped
     environment:
       MERIDIAN_MODE: all-in-one
-      MERIDIAN_TENANT_ID: ${MERIDIAN_TENANT_ID:-default}
+      MERIDIAN_TENANT_ID: ${MERIDIAN_TENANT_ID:-my-team}
+      MERIDIAN_AUTHOR: ${MERIDIAN_AUTHOR:-}
 
       # Slack
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}

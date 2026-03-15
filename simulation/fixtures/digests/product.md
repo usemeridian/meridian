@@ -8,8 +8,8 @@
 - Campaign briefs pipeline shipped (PR #2461) but no product sign-off on output format. Risk of rework if Sales has feedback.
 
 ## Scope Drift
-- analytics-service SQL migration expanding scope: original plan was 18 gold tables, now at 23. Extra 5 added without updated estimates.
-- report-service branding flag (PR #2466) added mid-sprint without backlog grooming. Small but sets precedent.
+- AnalyticsService SQL migration expanding scope: original plan was 18 gold tables, now at 23. Extra 5 added without updated estimates.
+- ReportService branding flag (PR #2466) added mid-sprint without backlog grooming. Small but sets precedent.
 
 ## Customer Signals
 - 2 enterprise prospects asked about SSO during demos this week (tracked in HubSpot). No current timeline for SSO.
@@ -17,9 +17,9 @@
 - Support ticket volume up 15% week-over-week. Top category: bulk import failures (Issue #342).
 
 ## Feature Delivery
-- Converged matching deployed to QA (data-pipeline). Alex and Sam start validation Monday.
+- Converged matching deployed to QA (ImportExportService). Nick and Swetha start validation Monday.
 - GitHub signal connector shipped -- first signal channel live. Enables digest MVP.
 
 ## Risks
-- No automated regression tests for the matching algorithm. Manual QA only. If Sam finds issues, iteration cycle will be slow.
+- No automated regression tests for the matching algorithm. Manual QA only. If Swetha finds issues, iteration cycle will be slow.
 - Campaign briefs pipeline runs on a Monday cron -- first real run is 3/2. No alerting configured beyond #system-alerts.

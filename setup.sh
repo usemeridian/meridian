@@ -348,6 +348,17 @@ case "$TOOL" in
             info "/init-team command already exists — skipped"
         fi
 
+        # /review-prs command
+        REVIEW_CMD_DEST="$HOME/.claude/commands/review-prs.md"
+        if [ ! -f "$REVIEW_CMD_DEST" ] || [ "$UPDATE" = true ]; then
+            if [ -f "$SPEC_DIR/commands/review-prs.md" ]; then
+                run cp "$SPEC_DIR/commands/review-prs.md" "$REVIEW_CMD_DEST"
+                log "Installed command: /review-prs"
+            fi
+        else
+            info "/review-prs command already exists — skipped"
+        fi
+
         # settings.json — merge hooks, don't overwrite
         SETTINGS="$HOME/.claude/settings.json"
         START_HOOK_CMD="bash ~/.claude/hooks/check-global-state.sh"
@@ -429,6 +440,49 @@ PYEOF
                 info "Hooks already registered in settings.json — skipped"
             fi
         fi
+
+        # Status line script
+        STATUSLINE_DEST="$HOME/.claude/meridian/statusline.sh"
+        if [ ! -f "$STATUSLINE_DEST" ] || [ "$UPDATE" = true ]; then
+            run cp "$SCRIPT_DIR/templates/statusline.sh" "$STATUSLINE_DEST"
+            run chmod +x "$STATUSLINE_DEST"
+            log "Installed status line: $STATUSLINE_DEST"
+        else
+            info "Status line already exists: $STATUSLINE_DEST — skipped"
+        fi
+
+        # Merge statusLine config into settings.json
+        if [ -f "$SETTINGS" ] && ! grep -q "statusLine" "$SETTINGS" 2>/dev/null; then
+            if [ "$DRY_RUN" = false ]; then
+                TMP_SL="$(mktemp)"
+                if python3 - "$SETTINGS" "$STATUSLINE_DEST" "$TMP_SL" <<'PYEOF' 2>/dev/null; then
+import json, sys
+settings_path, sl_cmd, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(settings_path) as f:
+        settings = json.load(f)
+except (json.JSONDecodeError, IOError):
+    sys.exit(1)
+if "statusLine" not in settings:
+    settings["statusLine"] = {"type": "command", "command": sl_cmd, "padding": 2}
+with open(out_path, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+PYEOF
+                    mv "$TMP_SL" "$SETTINGS"
+                    log "Added statusLine config to $SETTINGS"
+                else
+                    rm -f "$TMP_SL"
+                    warn "Could not add statusLine to $SETTINGS (malformed JSON or python3 unavailable)"
+                fi
+            else
+                info "[dry-run] Would add statusLine to $SETTINGS"
+            fi
+        else
+            if [ -f "$SETTINGS" ]; then
+                info "statusLine already configured in settings.json — skipped"
+            fi
+        fi
         ;;
 
     cursor)
@@ -490,7 +544,65 @@ if [ -n "$INSTALL_VERSION" ]; then
     fi
 fi
 
-# ── Step 6: Personas (informational) ─────────────────────────────────────────
+# ── Step 6: Inject elicitation prompts into existing team-state files ────────
+
+if [ "$UPDATE" = true ] && [ "$TOOL" = "claude-code" ]; then
+    header "Elicitation prompts"
+
+    ELICITATION_MARKER="## Elicitation Prompts"
+    ELICITATION_BLOCK="$ELICITATION_MARKER
+
+<!-- These prompts guide the AI to capture richer context at decision moments.
+     The AI should ask AT MOST ONE of these when a significant decision is stated
+     without reasoning. Do not ask during routine implementation — only at moments
+     where a choice was made between alternatives.
+
+     The answers aren't for you (you already know) — they're for your teammates
+     who will read the digest tomorrow. -->
+
+When a technical or product decision is made without stated reasoning, ask one of:
+- \"What alternatives did you consider?\"
+- \"What constraint or requirement drove this choice?\"
+- \"What would need to change for you to reverse this decision?\"
+- \"Who else on the team does this affect, and how?\"
+- \"What's the risk if this assumption is wrong?\"
+
+Do not ask if the decision already includes reasoning, tradeoffs, or constraints.
+Do not ask more than once per decision. Do not ask during routine implementation."
+
+    # Scan repos for team-state.md files and inject if missing
+    INJECT_COUNT=0
+    for state_file in $(find "$HOME/repos" -path '*/.claude/team-state.md' 2>/dev/null); do
+        if ! grep -qF "$ELICITATION_MARKER" "$state_file" 2>/dev/null; then
+            if [ "$DRY_RUN" = false ]; then
+                # Insert before "## Shared Gotchas" if it exists, otherwise append
+                if grep -qF "## Shared Gotchas" "$state_file" 2>/dev/null; then
+                    TMP_STATE="$(mktemp)"
+                    awk -v block="$ELICITATION_BLOCK" '
+                        /^## Shared Gotchas/ { print block; print ""; }
+                        { print }
+                    ' "$state_file" > "$TMP_STATE"
+                    mv "$TMP_STATE" "$state_file"
+                else
+                    echo "" >> "$state_file"
+                    echo "$ELICITATION_BLOCK" >> "$state_file"
+                fi
+                log "Injected elicitation prompts: $state_file"
+                INJECT_COUNT=$((INJECT_COUNT + 1))
+            else
+                info "[dry-run] Would inject elicitation prompts into $state_file"
+            fi
+        else
+            info "Already has elicitation: $(basename "$(dirname "$(dirname "$state_file")")")/$(basename "$(dirname "$state_file")")  — skipped"
+        fi
+    done
+
+    if [ "$INJECT_COUNT" -eq 0 ] && [ "$DRY_RUN" = false ]; then
+        info "No team-state.md files needed elicitation injection"
+    fi
+fi
+
+# ── Step 7: Personas (informational) ─────────────────────────────────────────
 
 header "Personas"
 
@@ -499,7 +611,7 @@ echo "  Default personas: Product, Design, Engineering, Strategy"
 echo "  You can customize personas later with 'meridian personas'"
 echo ""
 
-# ── Step 7: Summary ───────────────────────────────────────────────────────────
+# ── Step 8: Summary ───────────────────────────────────────────────────────────
 
 header "Done"
 

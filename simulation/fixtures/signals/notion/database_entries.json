@@ -47,7 +47,7 @@
       },
       "Assignee": {
         "type": "people",
-        "people": [{ "id": "user-004", "name": "Sam" }]
+        "people": [{ "id": "user-004", "name": "Swetha" }]
       }
     }
   },
@@ -73,7 +73,7 @@
       },
       "Assignee": {
         "type": "people",
-        "people": [{ "id": "user-005", "name": "Jordan" }]
+        "people": [{ "id": "user-005", "name": "Shunfeng" }]
       }
     }
   }

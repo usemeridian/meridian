@@ -28,7 +28,8 @@ fi
 # --conversations-only: skip journals (just written by the session, no need to re-index)
 # --export: write extracted decisions as journal entries for git sync
 # --detect-shifts: auto-update state files when significant context shifts are detected
-$MERIDIAN reindex --conversations-only --export --detect-shifts 2>/dev/null || true
+# --write-stats: write session stats JSON for status line display
+$MERIDIAN reindex --conversations-only --export --detect-shifts --write-stats 2>/dev/null || true
 
 # Sync authored journals to team-context repo (commit + push)
 # This makes local journals available to the container and other team members
