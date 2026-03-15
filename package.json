@@ -1,6 +1,6 @@
 {
   "name": "meridian-dev",
-  "version": "1.8.44",
+  "version": "1.8.45",
   "description": "Team decision trail for AI-assisted development. The connective tissue between product, engineering, and strategy.",
   "bin": {
     "meridian-dev": "bin/meridian.js",

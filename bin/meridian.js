@@ -4013,7 +4013,11 @@ const COMMANDS = {
       }
 
       console.log('Pushing to usemeridian/meridian...');
-      const pushResult = spawnSync('git', ['push'], { cwd: tmpDir, stdio: 'inherit' });
+      // Use GH_TOKEN to ensure correct account (gh multi-account may route wrong)
+      const tokenResult = spawnSync('gh', ['auth', 'token'], { stdio: 'pipe' });
+      const pushEnv = { ...process.env };
+      if (tokenResult.stdout) pushEnv.GH_TOKEN = tokenResult.stdout.toString().trim();
+      const pushResult = spawnSync('git', ['push'], { cwd: tmpDir, stdio: 'inherit', env: pushEnv });
       if (pushResult.status !== 0) {
         console.error('Push failed — check your access to usemeridian/meridian');
         process.exit(1);
