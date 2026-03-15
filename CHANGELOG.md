@@ -2,6 +2,21 @@
 
 All notable changes to Meridian are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.8.41] - 2026-03-15
+
+### Added
+- **SQLite storage backend** — content store now uses SQLite (via `better-sqlite3`) as primary storage with automatic JSON file fallback
+- Storage abstraction layer (`bin/storage/`) with pluggable backends
+- Auto-migration from JSON files to SQLite on first run (idempotent, preserves originals)
+- `MERIDIAN_STORAGE_BACKEND` env var to force `sqlite` or `json`
+- `meridian doctor` reports active storage backend
+- 21 new backend-specific tests (migration, rollback, dual-backend comparison)
+
+### Changed
+- Content store queries use indexed SQLite columns instead of full-file JSON deserialization
+- `better-sqlite3` added as optional dependency (install succeeds without it)
+- Dockerfile includes build tools for native compilation on Alpine
+
 ## [1.8.32] - 2026-03-13
 
 ### Added

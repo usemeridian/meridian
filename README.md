@@ -53,9 +53,9 @@ Only the engineer installs anything. Everyone else sees a Slack digest.
 
 ## How It Works
 
-### Plain Files, Not Databases
+### Plain Files + Local SQLite
 
-All context is plain markdown in directories you control:
+Team context lives in plain markdown that AI agents read directly:
 
 ```
 ~/.claude/
@@ -67,7 +67,9 @@ All context is plain markdown in directories you control:
   state.md                  # Per-repo: branch, status, next steps
 ```
 
-No proprietary formats. No vendor lock-in. `grep` works if Meridian breaks.
+The **content store** (searchable index of decisions, journal entries, and signals) uses SQLite for fast queries — auto-detected on install, with JSON file fallback if native compilation isn't available. Set `MERIDIAN_STORAGE_BACKEND=json` to force the fallback.
+
+No proprietary formats. No vendor lock-in. `grep` works on the markdown, `sqlite3` works on the index.
 
 ### The Session Protocol
 

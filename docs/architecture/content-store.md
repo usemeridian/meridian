@@ -20,6 +20,44 @@ meridian insights
 meridian insights --json
 ```
 
+## Storage backends
+
+The content store uses a **storage abstraction** with two backends. The backend is auto-detected on first use — no configuration needed.
+
+### SQLite (primary)
+
+When `better-sqlite3` is available (installed as an optional dependency), the content store uses a single SQLite database at `~/.claude/meridian/content-store/content-store.db`.
+
+- **WAL mode** — concurrent reads don't block
+- **Indexed queries** — date, repo, source, and user columns are indexed
+- **Transactions** — bulk operations are atomic
+- **File permissions** — `0600` (owner-only read/write)
+
+Tables: `decisions` (journal + conversation + signal entries), `embeddings` (vector storage), `conversation_index` (transcript tracking), `digest_feedback` (reactions and comments), `metadata` (schema version).
+
+### JSON files (fallback)
+
+When `better-sqlite3` is not available (native compilation failed, minimal install), the store falls back to JSON files:
+
+- `index.json` — entry metadata
+- `embeddings.json` — embedding vectors
+- `conversation-index.json` — processed transcript tracking
+- `digest-feedback.json` — delivery records and reactions
+
+All files use atomic writes (`.tmp` rename) and `0600` permissions.
+
+### Configuration
+
+| Environment variable | Values | Default |
+|---------------------|--------|---------|
+| `MERIDIAN_STORAGE_BACKEND` | `sqlite`, `json` | Auto-detect |
+
+### Migration
+
+On first run with SQLite available, existing JSON files are automatically migrated into the database. Migration is idempotent and preserves the original JSON files as backups. Use `MERIDIAN_STORAGE_BACKEND=json` to switch back at any time.
+
+`meridian doctor` reports which backend is active.
+
 ## How it works
 
 ### Indexing
@@ -28,16 +66,10 @@ meridian insights --json
 
 The index is **incremental** — it hashes each entry's content and only re-processes entries that changed. Running it twice on the same journals produces zero new/updated entries.
 
-Two files are written:
-- `index.json` — entry metadata (date, repo, title, tags, drift status, content hash)
-- `embeddings.json` — embedding vectors keyed by entry ID (only if OPENAI_API_KEY is set)
-
-Both files are written with `0600` permissions (owner-only read/write).
-
 ### Searching
 
 **Full-text search** (`--text` flag or automatic when no embeddings exist):
-- Matches query words against title, repo, date, and tags
+- Matches query words against title, repo, date, tags, and full journal entry content
 - No API key required — works on day zero
 - Scored by proportion of matching query words
 
@@ -97,7 +129,7 @@ meridian insights [--json] [--store <path>]
 
 `indexConversations()` scans Claude Code transcript files (`.jsonl` in `~/.claude/projects/`) and extracts decision points via LLM. Each extracted decision becomes a content store entry with `source: 'conversation'`. The LLM model is controlled by `MERIDIAN_EXTRACTION_MODEL` (defaults to `claude-sonnet-4-5-20250929`).
 
-A separate `conversation-index.json` tracks which transcripts have been processed and their content hashes, so re-runs skip unchanged files. The `indexConversationsWithExport()` variant additionally exports extracted decisions as journal entries for git sync — this is what runs at session end via the Stop hook.
+Transcript tracking (which files have been processed and their content hashes) ensures re-runs skip unchanged files. The `indexConversationsWithExport()` variant additionally exports extracted decisions as journal entries for git sync — this is what runs at session end via the Stop hook.
 
 ## Signal indexing
 
@@ -107,7 +139,7 @@ Signal data is pulled from GitHub (`MERIDIAN_GITHUB_REPOS`) and Intercom (`INTER
 
 ## Digest feedback
 
-The content store tracks digest delivery and team reactions in `digest-feedback.json`:
+The content store tracks digest delivery and team reactions:
 
 - `recordDigestDelivery()` — stores channel + message timestamp after posting a digest via bot token
 - `recordDigestReaction()` — records emoji reactions on digest messages (+1/-1 delta)
@@ -137,34 +169,27 @@ Entries also carry an `author` field parsed from journal file naming (`YYYY-MM-D
 
 Embeddings work with both OpenAI (`OPENAI_API_KEY`) and Azure OpenAI (`AZURE_OPENAI_EMBEDDING_ENDPOINT` + `AZURE_OPENAI_EMBEDDING_KEY` + `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`). Provider is auto-detected from env vars. Re-indexing backfills embeddings for entries that were previously indexed without them.
 
-## Storage schema (v2)
+Embeddings are stored as binary Float64Array buffers (SQLite) or JSON arrays (JSON fallback). Cosine similarity is computed in application code. Native vector search (e.g., `sqlite-vec`) is planned for a future release when entry counts warrant it.
 
-```json
-{
-  "version": "2.0.0",
-  "lastUpdated": 1709337600000,
-  "entryCount": 42,
-  "entries": {
-    "<id>": {
-      "date": "2026-02-24",
-      "repo": "meridian",
-      "title": "Implement signal connectors",
-      "user": "",
-      "source": "journal",
-      "author": "alice",
-      "drifted": false,
-      "contentHash": "a1b2c3d4e5f67890",
-      "contentLength": 512,
-      "tags": ["meridian", "signal", "implement", "connectors"],
-      "hasEmbedding": true
-    }
-  }
-}
-```
+## Entry schema
 
-Additional storage files alongside `index.json` and `embeddings.json`:
-- `conversation-index.json` — tracks processed transcript files and their content hashes
-- `digest-feedback.json` — stores delivery records, reactions, and text feedback per digest
+Each entry in the content store has these fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | 12-char hex hash of `date:repo:title` |
+| `date` | string | `YYYY-MM-DD` |
+| `repo` | string | Repository or project name |
+| `title` | string | Entry title |
+| `source` | string | `journal`, `conversation`, or `signal` |
+| `user` | string | Author slug (from filename or content) |
+| `drifted` | boolean | Whether drift was detected |
+| `contentHash` | string | 16-char hex SHA-256 of entry content |
+| `contentLength` | number | Character count of full entry text |
+| `tags` | string[] | Auto-extracted keyword tags |
+| `hasEmbedding` | boolean | Whether an embedding vector exists |
+| `hasReasoning` | boolean | Decision includes rationale (conversations only) |
+| `hasAlternatives` | boolean | Decision mentions rejected alternatives (conversations only) |
 
 ## What hosted adds
 
@@ -174,7 +199,5 @@ The local content store is fully functional for individual use. A hosted version
 - **Hosted embeddings** — semantic search without managing your own API key. Processing billed via usage credits.
 - **Automated indexing** — journals indexed continuously without running CLI. Webhook-triggered on session end.
 - **Web dashboard** — visual drift trends, repo activity charts, tag clouds, timeline views. Replaces CLI text output with interactive exploration.
-
-**Scaling:** As the content store grows, periodic cleanup of older journal entries is planned. The current approach indexes all journals without pruning. Future versions may archive older entries to vector storage (PGVector) while keeping recent entries in the flat-file index for fast access.
 
 See [architecture-principles.md](architecture-principles.md) for the architectural approach.
