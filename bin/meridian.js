@@ -3769,7 +3769,55 @@ const COMMANDS = {
         console.error(`Error: ${result.error.message}`);
         process.exit(1);
       }
-      process.exit(result.status || 0);
+      if (result.status && result.status !== 0) {
+        process.exit(result.status);
+      }
+
+      // Step 3: Update Meridian container if one is running
+      const dockerCheck = spawnSync('docker', ['compose', 'version'], { stdio: 'pipe' });
+      if (!dockerCheck.error && dockerCheck.status === 0) {
+        const psResult = spawnSync('docker', ['ps', '--filter', 'name=meridian', '--format', '{{.Names}}'], { stdio: 'pipe' });
+        const containers = (psResult.stdout || '').toString().trim();
+        if (containers && containers.split('\n').some(c => c === 'meridian')) {
+          console.log('\nMeridian container detected — pulling latest image...');
+
+          // Find compose file directory: check container labels, then known paths
+          let composeDir = '';
+          const inspectResult = spawnSync('docker', ['inspect', 'meridian', '--format', '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'], { stdio: 'pipe' });
+          const labelDir = (inspectResult.stdout || '').toString().trim();
+          if (labelDir && fs.existsSync(path.join(labelDir, 'docker-compose.yml'))) {
+            composeDir = labelDir;
+          } else {
+            const teamCtx = process.env.MERIDIAN_TEAM_CONTEXT_DIR || '';
+            const candidates = [
+              teamCtx ? path.join(teamCtx, 'deploy') : '',
+              process.cwd(),
+              path.join(HOME, 'team-context', 'deploy'),
+            ].filter(Boolean);
+            for (const dir of candidates) {
+              if (fs.existsSync(path.join(dir, 'docker-compose.yml'))) {
+                composeDir = dir;
+                break;
+              }
+            }
+          }
+
+          if (composeDir) {
+            console.log(`Using compose file in: ${composeDir}`);
+            const pullResult = spawnSync('docker', ['compose', 'pull'], { cwd: composeDir, stdio: 'inherit' });
+            if (!pullResult.error && pullResult.status === 0) {
+              console.log('Recreating container with new image...');
+              spawnSync('docker', ['compose', 'up', '-d'], { cwd: composeDir, stdio: 'inherit' });
+              console.log('Container updated.');
+            } else {
+              console.error('Docker pull failed — container not updated.');
+            }
+          } else {
+            console.log('Could not locate docker-compose.yml for the Meridian container.');
+            console.log('Run "docker compose pull && docker compose up -d" manually in your deploy directory.');
+          }
+        }
+      }
     },
   },
   digest: {

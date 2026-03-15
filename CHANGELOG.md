@@ -2,6 +2,14 @@
 
 All notable changes to Meridian are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.8.43] - 2026-03-15
+
+### Added
+- **Feedback-driven digest learning** — team emoji reactions and text replies on digest messages are now injected into the LLM prompt, so future digests adapt to what the team finds useful
+- Positive/negative emoji classification with 25+ recognized reactions
+- Text feedback quotes included verbatim in prompt (capped at 5)
+- 8 new tests for feedback scenarios
+
 ## [1.8.41] - 2026-03-15
 
 ### Added

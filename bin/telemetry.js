@@ -32,8 +32,17 @@ function init() {
   }
 }
 
-function getDistinctId() {
+function getTeamId() {
   return process.env.MERIDIAN_TENANT_ID || 'anonymous';
+}
+
+function getUserId() {
+  return process.env.MERIDIAN_AUTHOR || null;
+}
+
+// Back-compat alias
+function getDistinctId() {
+  return getTeamId();
 }
 
 /**
@@ -46,11 +55,15 @@ function capture(event, properties, userId) {
   init();
   if (!client || !enabled) return;
 
-  const distinctId = userId || getDistinctId();
+  const distinctId = userId || getUserId() || getTeamId();
+  const teamId = getTeamId();
   const props = {
     ...properties,
     meridian_version: getMeridianVersion(),
-    $groups: { team: getDistinctId() },
+    $groups: { team: teamId },
+    // Always include user and team as properties for easier querying
+    meridian_user: userId || getUserId() || 'unknown',
+    meridian_team: teamId,
   };
 
   try {

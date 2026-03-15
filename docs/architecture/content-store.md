@@ -146,7 +146,15 @@ The content store tracks digest delivery and team reactions:
 - `recordDigestFeedbackText()` — captures threaded text replies on digest messages
 - `getDigestFeedback()` — retrieves feedback summaries, filterable by date and limit
 
-This data feeds back into digest quality measurement.
+### Feedback-driven learning
+
+Feedback is injected into the digest prompt via `buildFeedbackContext()`. When generating a new digest, the system loads the last 14 days of feedback and builds a compact "Digest Preferences" section that tells the LLM what the team liked and disliked:
+
+- **Positive reactions** (rocket, fire, +1, tada, etc.) → "do more of this"
+- **Negative reactions** (thinking_face, -1, confused, etc.) → "reconsider emphasis"
+- **Text replies** → quoted verbatim as direct team feedback
+
+The section is capped at 500 characters and only injected when feedback exists — no prompt bloat on day zero. This creates a closed loop: team reacts → next digest adapts.
 
 ## Onboarding pack generation
 

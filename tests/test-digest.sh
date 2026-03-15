@@ -550,6 +550,135 @@ else
     _fail "collectFromStore empty for non-indexed store" "Expected empty results, got: $RESULT"
 fi
 
+# ── Feedback-driven digest learning ──────────────────────────────────────────
+
+echo ""
+echo "Feedback-driven digest learning"
+echo "================================"
+
+FEEDBACK_STORE="$TEST_HOME/feedback-store"
+mkdir -p "$FEEDBACK_STORE"
+
+echo ""
+echo "Test: buildFeedbackContext returns empty when no feedback"
+RESULT=$(node -e "
+  const digest = require('$REPO_ROOT/bin/digest');
+  const ctx = digest.buildFeedbackContext('unified', { storePath: '$FEEDBACK_STORE' });
+  console.log('EMPTY:' + (ctx === ''));
+")
+if echo "$RESULT" | grep -qF "EMPTY:true"; then
+    _pass "no feedback returns empty"
+else
+    _fail "no feedback returns empty" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: buildFeedbackContext with reactions only"
+RESULT=$(node -e "
+  const cs = require('$REPO_ROOT/bin/content-store');
+  cs.recordDigestDelivery({ date: '2026-03-14', persona: 'unified', channel: 'C1', ts: '100.200', storePath: '$FEEDBACK_STORE' });
+  cs.recordDigestReaction({ messageTs: '100.200', reaction: 'rocket', delta: 1, storePath: '$FEEDBACK_STORE' });
+  cs.recordDigestReaction({ messageTs: '100.200', reaction: 'fire', delta: 1, storePath: '$FEEDBACK_STORE' });
+  const digest = require('$REPO_ROOT/bin/digest');
+  const ctx = digest.buildFeedbackContext('unified', { storePath: '$FEEDBACK_STORE' });
+  console.log('HAS_POSITIVE:' + ctx.includes('Positive signals'));
+  console.log('HAS_NEGATIVE:' + ctx.includes('Concerns'));
+  console.log('HAS_HEADER:' + ctx.includes('Digest Preferences'));
+")
+if echo "$RESULT" | grep -qF "HAS_POSITIVE:true" && echo "$RESULT" | grep -qF "HAS_NEGATIVE:false" && echo "$RESULT" | grep -qF "HAS_HEADER:true"; then
+    _pass "reactions only — positive detected"
+else
+    _fail "reactions only — positive detected" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: buildFeedbackContext with text feedback only"
+RESULT=$(node -e "
+  const cs = require('$REPO_ROOT/bin/content-store');
+  cs.recordDigestFeedbackText({ messageTs: '100.200', user: 'U1', text: 'Need more infra details', storePath: '$FEEDBACK_STORE' });
+  const digest = require('$REPO_ROOT/bin/digest');
+  const ctx = digest.buildFeedbackContext('unified', { storePath: '$FEEDBACK_STORE' });
+  console.log('HAS_QUOTE:' + ctx.includes('Need more infra details'));
+")
+if echo "$RESULT" | grep -qF "HAS_QUOTE:true"; then
+    _pass "text feedback included"
+else
+    _fail "text feedback included" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: buildFeedbackContext with negative reactions"
+RESULT=$(node -e "
+  const cs = require('$REPO_ROOT/bin/content-store');
+  cs.recordDigestReaction({ messageTs: '100.200', reaction: 'thinking_face', delta: 1, storePath: '$FEEDBACK_STORE' });
+  cs.recordDigestReaction({ messageTs: '100.200', reaction: '-1', delta: 1, storePath: '$FEEDBACK_STORE' });
+  const digest = require('$REPO_ROOT/bin/digest');
+  const ctx = digest.buildFeedbackContext('unified', { storePath: '$FEEDBACK_STORE' });
+  console.log('HAS_CONCERNS:' + ctx.includes('Concerns'));
+")
+if echo "$RESULT" | grep -qF "HAS_CONCERNS:true"; then
+    _pass "negative reactions detected"
+else
+    _fail "negative reactions detected" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: buildFeedbackContext respects maxChars cap"
+RESULT=$(node -e "
+  const digest = require('$REPO_ROOT/bin/digest');
+  const ctx = digest.buildFeedbackContext('unified', { storePath: '$FEEDBACK_STORE', maxChars: 100 });
+  console.log('LEN:' + ctx.length);
+  console.log('CAPPED:' + (ctx.length <= 100));
+")
+if echo "$RESULT" | grep -qF "CAPPED:true"; then
+    _pass "maxChars cap enforced"
+else
+    _fail "maxChars cap enforced" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: buildFeedbackContext filters by persona"
+RESULT=$(node -e "
+  const digest = require('$REPO_ROOT/bin/digest');
+  const ctx = digest.buildFeedbackContext('engineering', { storePath: '$FEEDBACK_STORE' });
+  console.log('EMPTY:' + (ctx === ''));
+")
+if echo "$RESULT" | grep -qF "EMPTY:true"; then
+    _pass "persona filter excludes non-matching"
+else
+    _fail "persona filter excludes non-matching" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: feedback injected into buildPrompt when present"
+RESULT=$(node -e "
+  const digest = require('$REPO_ROOT/bin/digest');
+  const { user } = digest.buildPrompt('unified', 'signals', 'journals',
+    { from: '2026-03-14', to: '2026-03-15' }, { storePath: '$FEEDBACK_STORE' });
+  console.log('HAS_SECTION:' + user.includes('Digest Preferences'));
+")
+if echo "$RESULT" | grep -qF "HAS_SECTION:true"; then
+    _pass "feedback section in prompt"
+else
+    _fail "feedback section in prompt" "Got: $RESULT"
+fi
+
+echo ""
+echo "Test: no feedback section when store is empty"
+EMPTY_STORE="$TEST_HOME/empty-feedback-store"
+mkdir -p "$EMPTY_STORE"
+RESULT=$(node -e "
+  const digest = require('$REPO_ROOT/bin/digest');
+  const { user } = digest.buildPrompt('unified', 'signals', 'journals',
+    { from: '2026-03-14', to: '2026-03-15' }, { storePath: '$EMPTY_STORE' });
+  console.log('NO_SECTION:' + !user.includes('Digest Preferences'));
+")
+if echo "$RESULT" | grep -qF "NO_SECTION:true"; then
+    _pass "no feedback section when empty"
+else
+    _fail "no feedback section when empty" "Got: $RESULT"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 echo ""

@@ -370,6 +370,122 @@ function loadPreviousDigest(personaId, currentDate) {
   } catch { return ''; }
 }
 
+// ── Feedback-driven learning ─────────────────────────────────────────────────
+
+const POSITIVE_REACTIONS = new Set([
+  'rocket', 'fire', 'tada', 'heart', '+1', 'thumbsup',
+  '100', 'star', 'raised_hands', 'clap', 'pray', 'muscle',
+  'white_check_mark', 'heavy_check_mark', 'star-struck', 'boom',
+]);
+
+const NEGATIVE_REACTIONS = new Set([
+  '-1', 'thumbsdown', 'thinking_face', 'confused',
+  'disappointed', 'face_with_rolling_eyes', 'x', 'no_entry_sign',
+]);
+
+/**
+ * Build a feedback context section for the digest prompt.
+ * Summarizes recent team reactions and text feedback so the LLM
+ * can adapt what it surfaces.
+ *
+ * @param {string} personaId - Persona to filter feedback for
+ * @param {Object} [options]
+ * @param {string} [options.storePath] - Content store directory
+ * @param {number} [options.lookbackDays] - Days of feedback to consider (default: 14)
+ * @param {number} [options.maxChars] - Max output chars (default: 500)
+ * @returns {string} - Feedback section text, or empty string if no feedback
+ */
+function buildFeedbackContext(personaId, options = {}) {
+  const lookbackDays = options.lookbackDays || 14;
+  const maxChars = options.maxChars || 500;
+
+  const since = new Date();
+  since.setDate(since.getDate() - lookbackDays);
+  const sinceStr = since.toISOString().slice(0, 10);
+
+  const feedback = contentStore.getDigestFeedback({
+    storePath: options.storePath,
+    since: sinceStr,
+  });
+
+  if (!feedback || feedback.length === 0) return '';
+
+  // Filter to matching persona (or include all if persona not specified in feedback)
+  const relevant = feedback.filter(f => !f.persona || f.persona === personaId);
+  if (relevant.length === 0) return '';
+
+  // Tally positive/negative reactions
+  let positiveTotal = 0;
+  let negativeTotal = 0;
+  const positiveEmoji = {};
+  const negativeEmoji = {};
+
+  for (const f of relevant) {
+    for (const [emoji, count] of Object.entries(f.reactions || {})) {
+      if (POSITIVE_REACTIONS.has(emoji)) {
+        positiveTotal += count;
+        positiveEmoji[emoji] = (positiveEmoji[emoji] || 0) + count;
+      } else if (NEGATIVE_REACTIONS.has(emoji)) {
+        negativeTotal += count;
+        negativeEmoji[emoji] = (negativeEmoji[emoji] || 0) + count;
+      }
+    }
+  }
+
+  // Collect text feedback (most recent first, cap at 5)
+  const quotes = [];
+  for (const f of relevant) {
+    for (const c of (f.comments || [])) {
+      if (c.text && c.text.trim()) {
+        quotes.push(c.text.trim().substring(0, 120));
+      }
+    }
+  }
+  const topQuotes = quotes.slice(0, 5);
+
+  // If no signal at all, skip
+  if (positiveTotal === 0 && negativeTotal === 0 && topQuotes.length === 0) return '';
+
+  // Build compact summary
+  const parts = [];
+  parts.push('## Digest Preferences (from team feedback)');
+  parts.push('The team has reacted to recent digests. Use this to calibrate what you surface:');
+
+  if (positiveTotal > 0) {
+    const topPositive = Object.entries(positiveEmoji)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([e]) => ':' + e + ':')
+      .join(' ');
+    parts.push(`Positive signals (${positiveTotal} reactions: ${topPositive}) — do more of what recent digests covered.`);
+  }
+
+  if (negativeTotal > 0) {
+    const topNegative = Object.entries(negativeEmoji)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([e]) => ':' + e + ':')
+      .join(' ');
+    parts.push(`Concerns (${negativeTotal} reactions: ${topNegative}) — reconsider emphasis or framing.`);
+  }
+
+  if (topQuotes.length > 0) {
+    parts.push('Direct feedback from the team:');
+    for (const q of topQuotes) {
+      parts.push(`- "${q}"`);
+    }
+  }
+
+  let result = parts.join('\n');
+
+  // Enforce char cap
+  if (result.length > maxChars) {
+    result = result.substring(0, maxChars - 3) + '...';
+  }
+
+  return result;
+}
+
 /**
  * Build the system prompt and user message for a persona digest.
  * @param {string} personaId - Persona identifier (e.g. 'engineering', 'product')
@@ -410,6 +526,12 @@ function buildPrompt(personaId, signalContent, journalContent, dateRange, contex
   const prevDigest = loadPreviousDigest(personaId, dateRange.to);
   if (prevDigest) {
     sections.push(`## Previous Digest\nThe following was the most recent digest. Do not repeat these items unless there is a meaningful update.\n\n${prevDigest}`);
+  }
+
+  // Team feedback on recent digests
+  const feedbackContext = buildFeedbackContext(personaId, { storePath: ctx.storePath });
+  if (feedbackContext) {
+    sections.push(feedbackContext);
   }
 
   // Excluded topics directive (driven by MERIDIAN_EXCLUDE_REPOS)
@@ -684,6 +806,7 @@ module.exports = {
   loadTeamContext,
   loadTeamMembers,
   loadPreviousDigest,
+  buildFeedbackContext,
   buildPrompt,
   generateDigest,
   configure,
