@@ -1,6 +1,6 @@
 {
   "name": "meridian-dev",
-  "version": "1.8.34",
+  "version": "1.8.41",
   "description": "Team decision trail for AI-assisted development. The connective tissue between product, engineering, and strategy.",
   "bin": {
     "meridian-dev": "bin/meridian.js",
@@ -39,7 +39,7 @@
     "BOOTSTRAP_PROMPT.md"
   ],
   "scripts": {
-    "test": "bash tests/test-bugs-core.sh && bash tests/test-bugs-reliability.sh && bash tests/test-enhancements-features.sh && bash tests/test-enhancements-tooling.sh && bash tests/test-journal-summary.sh && bash tests/test-connectors.sh && bash tests/test-intercom.sh && bash tests/test-digest.sh && bash tests/test-content-store.sh && bash tests/test-rebuild-status.sh && bash tests/test-notion.sh && bash tests/test-signal-to-digest-e2e.sh",
+    "test": "bash tests/test-bugs-core.sh && bash tests/test-bugs-reliability.sh && bash tests/test-enhancements-features.sh && bash tests/test-enhancements-tooling.sh && bash tests/test-journal-summary.sh && bash tests/test-connectors.sh && bash tests/test-intercom.sh && bash tests/test-digest.sh && bash tests/test-content-store.sh && bash tests/test-storage-backends.sh && bash tests/test-rebuild-status.sh && bash tests/test-notion.sh && bash tests/test-signal-to-digest-e2e.sh && bash tests/test-bot-commands.sh",
     "test:sim": "bash simulation/simulate.sh",
     "test:all": "npm test && npm run test:sim"
   },
@@ -49,5 +49,8 @@
   "dependencies": {
     "@slack/bolt": "^4.6.0",
     "posthog-node": "^5.28.0"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.0.0"
   }
 }

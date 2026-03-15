@@ -251,6 +251,23 @@ check_team_versions() {
     fi
 }
 
+check_storage_backend() {
+    echo ""
+    echo "Storage backend"
+
+    # Check for env var override
+    if [ -n "${MERIDIAN_STORAGE_BACKEND:-}" ]; then
+        info "MERIDIAN_STORAGE_BACKEND=$MERIDIAN_STORAGE_BACKEND (env override)"
+    fi
+
+    # Check if better-sqlite3 is available
+    if node -e "require('better-sqlite3')" 2>/dev/null; then
+        ok "Storage backend: sqlite (better-sqlite3 available)"
+    else
+        ok "Storage backend: json (better-sqlite3 not installed — using JSON fallback)"
+    fi
+}
+
 # Run checks
 echo ""
 echo "Meridian — Doctor"
@@ -260,6 +277,7 @@ check_hook_registered
 check_global_state
 check_backup
 check_team_versions
+check_storage_backend
 check_memory_files
 scan_repos
 

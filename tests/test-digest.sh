@@ -482,7 +482,7 @@ cat > "$STORE_JOURNAL_DIR/2026-02-25-greg.md" << 'JEOF'
 JEOF
 
 cat > "$STORE_JOURNAL_DIR/2026-02-26-nick.md" << 'JEOF'
-## report-service — Fix exports
+## ReportService — Fix exports
 **Why:** PDF exports broken
 **What:** Fixed rendering pipeline
 **Outcome:** Exports working

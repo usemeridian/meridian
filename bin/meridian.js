@@ -947,6 +947,26 @@ async function runDigest(args) {
   }
   console.log('');
 
+  // Update quality profile (piggyback on digest generation)
+  try {
+    const qualityProfile = contentStore.computeQualityProfile({ days: 30 });
+    if (qualityProfile.totalDecisions > 0) {
+      const existingProfile = readJSONFile(PROFILE_FILE) || {};
+      existingProfile.quality_profile = {
+        computed_at: new Date().toISOString(),
+        days: 30,
+        total_decisions: qualityProfile.totalDecisions,
+        rich_rate: qualityProfile.richRate,
+        reasoning_rate: qualityProfile.reasoning.rate,
+        alternatives_rate: qualityProfile.alternatives.rate,
+        focus: qualityProfile.focus,
+      };
+      writeJSONFile(PROFILE_FILE, existingProfile);
+    }
+  } catch {
+    // Non-fatal — quality profile update failure shouldn't block digest
+  }
+
   // Deliver to Slack
   if (deliver) {
     const webhookUrl = process.env.MERIDIAN_SLACK_WEBHOOK
@@ -1205,11 +1225,44 @@ async function runIndexConversationsWithExport(args, detectShifts = false) {
     console.log('');
     console.log(`Scanned:    ${stats.transcriptsScanned} transcripts`);
     console.log(`Processed:  ${stats.transcriptsProcessed}`);
-    console.log(`Decisions:  ${stats.decisionsExtracted}`);
+    const rich = stats.richCount || 0;
+    const thin = stats.thinCount || 0;
+    const qualitySuffix = (rich + thin) > 0 ? ` (${rich} rich, ${thin} thin)` : '';
+    console.log(`Decisions:  ${stats.decisionsExtracted}${qualitySuffix}`);
     console.log(`Exported:   ${stats.exported}`);
     console.log(`Skipped:    ${stats.skipped}`);
     if (stats.errors > 0) {
       console.log(`Errors:     ${stats.errors}`);
+    }
+
+    // Write session stats JSON for status line display
+    if (args.includes('--write-stats')) {
+      const statsData = {
+        decisions: stats.decisionsExtracted || 0,
+        exported: stats.exported || 0,
+        rich: rich,
+        thin: thin,
+        session_date: new Date().toISOString().slice(0, 10),
+        timestamp: new Date().toISOString(),
+      };
+      const statsPath = path.join(HOME, '.claude', 'meridian', 'session-stats.json');
+      try {
+        fs.mkdirSync(path.dirname(statsPath), { recursive: true });
+        fs.writeFileSync(statsPath, JSON.stringify(statsData, null, 2) + '\n');
+      } catch (e) {
+        // Non-fatal — status line just won't update
+      }
+
+      // Telemetry: decision quality per session
+      if (stats.exported > 0) {
+        telemetry.capture('decision_quality', {
+          decisions: stats.decisionsExtracted || 0,
+          exported: stats.exported || 0,
+          rich: rich,
+          thin: thin,
+          rich_rate: (rich + thin) > 0 ? Math.round((rich / (rich + thin)) * 100) : 0,
+        }, CLI_USER);
+      }
     }
 
     // Context shift detection — single classification per reindex run
@@ -1274,7 +1327,7 @@ async function runOnboard(args) {
 
   if (!repoQuery) {
     console.error('Usage: meridian onboard <repo-name> [--days N] [--output <path>]');
-    console.error('  e.g. meridian onboard web-api');
+    console.error('  e.g. meridian onboard SellingService');
     console.error('  e.g. meridian onboard acme-corp/web-api --days 30');
     process.exit(1);
   }
@@ -1385,6 +1438,15 @@ function runInsights(args) {
     console.log('');
   }
 
+  if (insights.quality && insights.quality.totalDecisions > 0) {
+    const q = insights.quality;
+    console.log('Decision quality:');
+    console.log(`  Total decisions: ${q.totalDecisions}`);
+    console.log(`  Rich:            ${q.rich} (${q.richRate}%)`);
+    console.log(`  Thin:            ${q.thin}`);
+    console.log('');
+  }
+
   if (insights.timeline.length > 0) {
     console.log('Timeline (last 14 days):');
     const recent = insights.timeline.slice(-14);
@@ -1394,6 +1456,122 @@ function runInsights(args) {
     }
     console.log('');
   }
+}
+
+// ── Quality command ─────────────────────────────────────────────────────────
+
+function runQuality(args) {
+  const { opts } = parseCSArgs(args);
+  const days = opts.days ? parseInt(opts.days, 10) : 30;
+  const apply = args.includes('--apply');
+
+  const profile = contentStore.computeQualityProfile({
+    storePath: opts.store || undefined,
+    days,
+  });
+
+  if (opts.json) {
+    console.log(JSON.stringify(profile, null, 2));
+    return;
+  }
+
+  console.log('');
+  console.log('Decision Quality Profile');
+  console.log('========================');
+  console.log(`Period: last ${days} days`);
+  console.log('');
+
+  if (profile.totalDecisions === 0) {
+    console.log('No decisions indexed yet. Run a few sessions, then try again.');
+    console.log('');
+    return;
+  }
+
+  console.log(`Total decisions:  ${profile.totalDecisions}`);
+  console.log(`Rich:             ${profile.rich} (${profile.richRate}%)`);
+  console.log(`Thin:             ${profile.thin}`);
+  console.log('');
+  console.log(`  Reasoning:      ${profile.reasoning.present}/${profile.totalDecisions} (${profile.reasoning.rate}%)`);
+  console.log(`  Alternatives:   ${profile.alternatives.present}/${profile.totalDecisions} (${profile.alternatives.rate}%)`);
+  console.log('');
+
+  if (profile.weeklyTrend.length > 1) {
+    console.log('Weekly trend:');
+    for (const { week, richRate, count } of profile.weeklyTrend) {
+      const bar = '\u2588'.repeat(Math.round(richRate / 5));
+      console.log(`  ${week}  ${bar} ${richRate}% (${count} decisions)`);
+    }
+    console.log('');
+  }
+
+  if (profile.focus.length > 0) {
+    console.log('Elicitation focus:');
+    for (const f of profile.focus) {
+      console.log(`  - ${f}`);
+    }
+    console.log('');
+  }
+
+  // Save quality profile to profile.json
+  const existingProfile = readJSONFile(PROFILE_FILE) || {};
+  existingProfile.quality_profile = {
+    computed_at: new Date().toISOString(),
+    days,
+    total_decisions: profile.totalDecisions,
+    rich_rate: profile.richRate,
+    reasoning_rate: profile.reasoning.rate,
+    alternatives_rate: profile.alternatives.rate,
+    focus: profile.focus,
+  };
+  writeJSONFile(PROFILE_FILE, existingProfile);
+  console.log(`Profile saved to ${PROFILE_FILE}`);
+
+  // Generate and optionally apply elicitation focus to personal-state.md
+  if (profile.focus.length > 0 && profile.focus[0] !== 'keep it up — your decision context is strong') {
+    const focusBlock = [
+      '## My Elicitation Focus',
+      '',
+      '<!-- Auto-generated by `meridian quality`. Updated when you re-run the command. -->',
+      '',
+      'When making decisions in this repo, the AI should prioritize eliciting:',
+      ...profile.focus.map(f => `- ${f}`),
+      '',
+    ].join('\n');
+
+    if (apply) {
+      // Find personal-state.md in current repo
+      const personalState = path.join(process.cwd(), '.claude', 'personal-state.md');
+      if (fs.existsSync(personalState)) {
+        let content = fs.readFileSync(personalState, 'utf8');
+        // Replace existing section or append
+        if (content.includes('## My Elicitation Focus')) {
+          content = content.replace(
+            /## My Elicitation Focus[\s\S]*?(?=\n## |\n*$)/,
+            focusBlock
+          );
+        } else {
+          content = content.trimEnd() + '\n\n' + focusBlock;
+        }
+        fs.writeFileSync(personalState, content);
+        console.log(`Applied elicitation focus to ${personalState}`);
+      } else {
+        console.log('No personal-state.md found in current repo. Run /init-memory first.');
+      }
+    } else {
+      console.log('');
+      console.log('To apply this focus to your personal-state.md, run:');
+      console.log('  meridian quality --apply');
+    }
+  }
+
+  console.log('');
+
+  telemetry.capture('quality_profile_viewed', {
+    total_decisions: profile.totalDecisions,
+    rich_rate: profile.richRate,
+    reasoning_rate: profile.reasoning.rate,
+    alternatives_rate: profile.alternatives.rate,
+  }, CLI_USER);
 }
 
 // ── Journal command ─────────────────────────────────────────────────────────
@@ -3500,6 +3678,18 @@ function runMembers(args) {
  * if the installed version is below the team minimum.
  */
 function runCheckVersion() {
+  // Stamp member profile on every session start so version/last_active stay current
+  const config = readContextConfig();
+  const teamIds = config.teams ? Object.keys(config.teams) : [];
+  for (const teamId of teamIds) {
+    const repoPath = getTeamContextPath(teamId);
+    if (repoPath) stampMemberVersion(repoPath);
+  }
+  if (teamIds.length === 0) {
+    const repoPath = getTeamContextPath();
+    if (repoPath) stampMemberVersion(repoPath);
+  }
+
   const result = checkMinVersion();
   if (!result) return; // no min_version configured
   if (result.ok) return; // version is fine
@@ -3690,6 +3880,10 @@ const COMMANDS = {
   insights: {
     desc: 'Show insights from indexed journal data',
     run: (args) => runInsights(args),
+  },
+  quality: {
+    desc: 'View your decision quality profile and elicitation focus',
+    run: (args) => runQuality(args),
   },
   help: {
     desc: 'Show this help message',

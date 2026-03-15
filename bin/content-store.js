@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const llm = require('./connectors/llm');
 const telemetry = require('./telemetry');
+const { getBackend, getBackendType } = require('./storage');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -13,10 +14,6 @@ const DEFAULT_STORE_PATH = HOME ? path.join(HOME, '.claude', 'meridian', 'conten
 const DEFAULT_JOURNAL_DIR = HOME ? path.join(HOME, '.claude', 'memory', 'journal') : null;
 const DEFAULT_PROJECTS_DIR = HOME ? path.join(HOME, '.claude', 'projects') : null;
 const DEFAULT_SIGNALS_DIR = HOME ? path.join(HOME, '.claude', 'meridian', 'signals') : null;
-const CONVERSATION_INDEX_FILE = 'conversation-index.json';
-
-const INDEX_FILE = 'index.json';
-const EMBEDDINGS_FILE = 'embeddings.json';
 const INDEX_VERSION = '2.0.0';
 const FILE_PERMS = 0o600;
 
@@ -238,80 +235,6 @@ function contentHash(content) {
   return crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
 }
 
-// ── Storage layer ───────────────────────────────────────────────────────────
-
-/**
- * Ensure the store directory exists.
- * @param {string} storePath
- */
-function ensureStoreDir(storePath) {
-  if (!fs.existsSync(storePath)) {
-    fs.mkdirSync(storePath, { recursive: true });
-  }
-}
-
-/**
- * Load the index from disk.
- * @param {string} storePath
- * @returns {Object} - Index object
- */
-function loadIndex(storePath) {
-  const indexPath = path.join(storePath, INDEX_FILE);
-  try {
-    const data = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
-    if (data.version === INDEX_VERSION) return data;
-    // Incompatible version — return empty
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Save the index to disk with restricted permissions.
- * Atomic write via rename.
- * @param {string} storePath
- * @param {Object} index
- */
-function saveIndex(storePath, index) {
-  ensureStoreDir(storePath);
-  const indexPath = path.join(storePath, INDEX_FILE);
-  const tmpPath = indexPath + '.tmp';
-  index.lastUpdated = Date.now();
-  index.entryCount = Object.keys(index.entries).length;
-  const content = JSON.stringify(index, null, 2) + '\n';
-  fs.writeFileSync(tmpPath, content, { mode: FILE_PERMS });
-  fs.renameSync(tmpPath, indexPath);
-}
-
-/**
- * Load embeddings from disk.
- * @param {string} storePath
- * @returns {Object} - Map of entryId → vector
- */
-function loadEmbeddings(storePath) {
-  const embPath = path.join(storePath, EMBEDDINGS_FILE);
-  try {
-    return JSON.parse(fs.readFileSync(embPath, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Save embeddings to disk with restricted permissions.
- * @param {string} storePath
- * @param {Object} embeddings - Map of entryId → vector
- */
-function saveEmbeddings(storePath, embeddings) {
-  ensureStoreDir(storePath);
-  const embPath = path.join(storePath, EMBEDDINGS_FILE);
-  const tmpPath = embPath + '.tmp';
-  const content = JSON.stringify(embeddings) + '\n';
-  fs.writeFileSync(tmpPath, content, { mode: FILE_PERMS });
-  fs.renameSync(tmpPath, embPath);
-}
-
 // ── Cosine similarity ───────────────────────────────────────────────────────
 
 /**
@@ -358,9 +281,10 @@ async function indexJournals(options = {}) {
   }
 
   // Load existing index
-  const existingIndex = loadIndex(storePath);
+  const backend = getBackend(storePath);
+  const existingIndex = backend.loadIndex();
   const existingEntries = existingIndex ? existingIndex.entries : {};
-  const existingEmbeddings = doEmbeddings ? loadEmbeddings(storePath) : {};
+  const existingEmbeddings = doEmbeddings ? backend.loadEmbeddings() : {};
 
   // Parse all journal files
   const files = fs.readdirSync(journalDir).filter(f => DATE_FILE_RE.test(f)).sort();
@@ -468,9 +392,9 @@ async function indexJournals(options = {}) {
     entries: finalEntries,
   };
 
-  saveIndex(storePath, index);
+  backend.saveIndex(index);
   if (doEmbeddings) {
-    saveEmbeddings(storePath, finalEmbeddings);
+    backend.saveEmbeddings(finalEmbeddings);
   }
 
   telemetry.capture('reindex', {
@@ -500,10 +424,11 @@ async function searchJournals(query, options = {}) {
   const storePath = options.storePath || DEFAULT_STORE_PATH;
   const limit = options.limit || 10;
 
-  const index = loadIndex(storePath);
+  const backend = getBackend(storePath);
+  const index = backend.loadIndex();
   if (!index) return [];
 
-  const embeddings = loadEmbeddings(storePath);
+  const embeddings = backend.loadEmbeddings();
   const hasEmbeddings = Object.keys(embeddings).length > 0;
 
   if (!hasEmbeddings) {
@@ -554,7 +479,7 @@ function searchText(query, options = {}) {
   const journalDir = options.journalDir || DEFAULT_JOURNAL_DIR;
   const limit = options.limit || 10;
 
-  const index = loadIndex(storePath);
+  const index = getBackend(storePath).loadIndex();
   if (!index) return [];
 
   // Normalize: split on whitespace, hyphens, underscores
@@ -671,7 +596,7 @@ function applyFilters(entry, filters) {
  */
 function queryMetadata(options = {}) {
   const storePath = options.storePath || DEFAULT_STORE_PATH;
-  const index = loadIndex(storePath);
+  const index = getBackend(storePath).loadIndex();
   if (!index) return [];
 
   const results = [];
@@ -693,7 +618,7 @@ function queryMetadata(options = {}) {
  */
 function extractInsights(options = {}) {
   const storePath = options.storePath || DEFAULT_STORE_PATH;
-  const index = loadIndex(storePath);
+  const index = getBackend(storePath).loadIndex();
   if (!index || index.entryCount === 0) {
     return {
       totalSessions: 0,
@@ -733,12 +658,25 @@ function extractInsights(options = {}) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, count]) => ({ date, sessions: count }));
 
+  // Decision quality breakdown (conversation entries only)
+  const conversationEntries = entries.filter(e => e.source === 'conversation');
+  const totalDecisions = conversationEntries.length;
+  const richDecisions = conversationEntries.filter(e => e.hasReasoning || e.hasAlternatives).length;
+  const thinDecisions = totalDecisions - richDecisions;
+  const richRate = totalDecisions > 0 ? Math.round((richDecisions / totalDecisions) * 100) : 0;
+
   return {
     totalSessions,
     driftRate,
     repoActivity,
     tagFrequency,
     timeline,
+    quality: {
+      totalDecisions,
+      rich: richDecisions,
+      thin: thinDecisions,
+      richRate,
+    },
   };
 }
 
@@ -765,7 +703,7 @@ function getEntryContent(entryId, options = {}) {
   const journalDir = options.journalDir || DEFAULT_JOURNAL_DIR;
   const signalsDir = options.signalsDir || DEFAULT_SIGNALS_DIR;
 
-  const index = loadIndex(storePath);
+  const index = getBackend(storePath).loadIndex();
   if (!index || !index.entries[entryId]) return null;
 
   const entry = index.entries[entryId];
@@ -1027,6 +965,8 @@ Output a JSON array of decision objects. Each object has:
 - "decision": what was decided and why (1-3 sentences)
 - "alternatives": rejected alternatives, if any (1 sentence or empty string)
 - "tags": array of 2-5 lowercase keyword tags
+- "has_reasoning": boolean — true if the decision includes WHY it was made (rationale, constraints, tradeoffs), not just WHAT was decided
+- "has_alternatives": boolean — true if rejected alternatives or considered options are mentioned
 
 Strip any credentials, API keys, or tokens from the output.
 
@@ -1212,33 +1152,6 @@ function fileFingerprint(filePath) {
 }
 
 /**
- * Load the conversation index (tracks which transcripts have been indexed).
- * @param {string} storePath
- * @returns {Object} - Map of filePath → { fingerprint, entryIds, extractedAt }
- */
-function loadConversationIndex(storePath) {
-  const indexPath = path.join(storePath, CONVERSATION_INDEX_FILE);
-  try {
-    return JSON.parse(fs.readFileSync(indexPath, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Save the conversation index.
- * @param {string} storePath
- * @param {Object} convIndex
- */
-function saveConversationIndex(storePath, convIndex) {
-  ensureStoreDir(storePath);
-  const indexPath = path.join(storePath, CONVERSATION_INDEX_FILE);
-  const tmpPath = indexPath + '.tmp';
-  fs.writeFileSync(tmpPath, JSON.stringify(convIndex, null, 2) + '\n', { mode: FILE_PERMS });
-  fs.renameSync(tmpPath, indexPath);
-}
-
-/**
  * Index conversation transcripts. Extracts decision points via LLM and adds to content store.
  * Incremental — skips transcripts already indexed (by file fingerprint).
  * @param {Object} options
@@ -1275,9 +1188,10 @@ async function indexConversations(options = {}) {
   const stats = { transcriptsScanned: 0, transcriptsProcessed: 0, decisionsExtracted: 0, skipped: 0, errors: 0 };
 
   // Load existing indexes
-  const existingIndex = loadIndex(storePath) || { version: INDEX_VERSION, entries: {}, lastUpdated: Date.now(), entryCount: 0 };
-  const existingEmbeddings = doEmbeddings ? loadEmbeddings(storePath) : {};
-  const convIndex = loadConversationIndex(storePath);
+  const backend = getBackend(storePath);
+  const existingIndex = backend.loadIndex() || { version: INDEX_VERSION, entries: {}, lastUpdated: Date.now(), entryCount: 0 };
+  const existingEmbeddings = doEmbeddings ? backend.loadEmbeddings() : {};
+  const convIndex = backend.loadConversationIndex();
 
   // Compute since cutoff
   let sinceCutoff = 0;
@@ -1411,6 +1325,8 @@ async function indexConversations(options = {}) {
         contentLength: content.length,
         tags: decision.tags || [],
         hasEmbedding: false,
+        hasReasoning: !!decision.has_reasoning,
+        hasAlternatives: !!decision.has_alternatives,
         _content: content,
       };
 
@@ -1441,11 +1357,11 @@ async function indexConversations(options = {}) {
 
   // Save everything
   existingIndex.entryCount = Object.keys(existingIndex.entries).length;
-  saveIndex(storePath, existingIndex);
+  backend.saveIndex(existingIndex);
   if (doEmbeddings) {
-    saveEmbeddings(storePath, existingEmbeddings);
+    backend.saveEmbeddings(existingEmbeddings);
   }
-  saveConversationIndex(storePath, convIndex);
+  backend.saveConversationIndex(convIndex);
 
   return stats;
 }
@@ -1485,7 +1401,7 @@ Rules:
 /**
  * Generate an onboarding context pack for a repo.
  * Queries the content store for recent entries, fetches full content, and synthesizes.
- * @param {string} repoQuery - Repo name or partial match (e.g. "web-api")
+ * @param {string} repoQuery - Repo name or partial match (e.g. "SellingService")
  * @param {Object} options
  * @param {string} [options.storePath] - Content store directory
  * @param {string} [options.journalDir] - Journal directory (for full content retrieval)
@@ -1503,7 +1419,7 @@ async function generateOnboardingPack(repoQuery, options = {}) {
     api_key_env: 'ANTHROPIC_API_KEY',
   };
 
-  const index = loadIndex(storePath);
+  const index = getBackend(storePath).loadIndex();
   if (!index || index.entryCount === 0) {
     throw new Error('Content store is empty. Run "meridian reindex" first.');
   }
@@ -1584,6 +1500,11 @@ function exportDecisionsAsJournal(date, repo, decisions, journalDir, teamId, aut
     // Skip if this decision's title already appears in the file
     if (existing && existing.includes(d.title)) continue;
 
+    const qualityTags = [];
+    if (d.has_reasoning) qualityTags.push('rich:reasoning');
+    if (d.has_alternatives) qualityTags.push('rich:alternatives');
+    const qualityLabel = qualityTags.length > 0 ? qualityTags.join(', ') : 'thin';
+
     newLines.push(`## ${repo} — ${d.title} [decision]`);
     newLines.push(`**Why:** Extracted from conversation transcript`);
     newLines.push(`**What:** ${d.decision}`);
@@ -1593,6 +1514,7 @@ function exportDecisionsAsJournal(date, repo, decisions, journalDir, teamId, aut
       newLines.push(`**Outcome:** Decision recorded`);
     }
     newLines.push(`**On track?:** N/A (extracted decision point)`);
+    newLines.push(`**Quality:** ${qualityLabel}`);
     newLines.push(`**Lessons:** ${(d.tags || []).join(', ')}`);
     newLines.push('');
   }
@@ -1624,6 +1546,8 @@ async function indexConversationsWithExport(options = {}) {
   const repoToTeam = options.repoToTeam || (() => null);
   const author = options.author || null;
   let exported = 0;
+  let richCount = 0;
+  let thinCount = 0;
   const pendingExports = [];
 
   const stats = await indexConversations({
@@ -1638,9 +1562,16 @@ async function indexConversationsWithExport(options = {}) {
     const teamId = repoToTeam(repo);
     exportDecisionsAsJournal(date, repo, decisions, exportDir, teamId, author);
     exported += decisions.length;
+    for (const d of decisions) {
+      if (d.has_reasoning || d.has_alternatives) {
+        richCount++;
+      } else {
+        thinCount++;
+      }
+    }
   }
 
-  return { ...stats, exported, pendingExports };
+  return { ...stats, exported, pendingExports, richCount, thinCount };
 }
 
 // ── Signal file indexing ─────────────────────────────────────────────────────
@@ -1671,8 +1602,9 @@ async function indexSignals(options = {}) {
   }
 
   // Load existing index (contains journal + conversation entries too)
-  const existingIndex = loadIndex(storePath) || { version: INDEX_VERSION, entries: {}, lastUpdated: Date.now(), entryCount: 0 };
-  const existingEmbeddings = doEmbeddings ? loadEmbeddings(storePath) : {};
+  const backend = getBackend(storePath);
+  const existingIndex = backend.loadIndex() || { version: INDEX_VERSION, entries: {}, lastUpdated: Date.now(), entryCount: 0 };
+  const existingEmbeddings = doEmbeddings ? backend.loadEmbeddings() : {};
 
   const stats = { fileCount: 0, newEntries: 0, updatedEntries: 0, skippedEntries: 0 };
 
@@ -1800,9 +1732,9 @@ async function indexSignals(options = {}) {
 
   // Save
   existingIndex.entryCount = Object.keys(existingIndex.entries).length;
-  saveIndex(storePath, existingIndex);
+  backend.saveIndex(existingIndex);
   if (doEmbeddings) {
-    saveEmbeddings(storePath, existingEmbeddings);
+    backend.saveEmbeddings(existingEmbeddings);
   }
 
   return stats;
@@ -1810,24 +1742,12 @@ async function indexSignals(options = {}) {
 
 // ── Digest feedback ─────────────────────────────────────────────────────────
 
-const FEEDBACK_FILE = 'digest-feedback.json';
-
 function loadFeedback(storePath) {
-  storePath = storePath || DEFAULT_STORE_PATH;
-  if (!storePath) return { digests: {} };
-  const fp = path.join(storePath, FEEDBACK_FILE);
-  try {
-    return JSON.parse(fs.readFileSync(fp, 'utf8'));
-  } catch { return { digests: {} }; }
+  return getBackend(storePath || DEFAULT_STORE_PATH).loadFeedback();
 }
 
 function saveFeedback(storePath, feedback) {
-  storePath = storePath || DEFAULT_STORE_PATH;
-  if (!storePath) return;
-  const fp = path.join(storePath, FEEDBACK_FILE);
-  const tmp = fp + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(feedback, null, 2), { mode: FILE_PERMS });
-  fs.renameSync(tmp, fp);
+  getBackend(storePath || DEFAULT_STORE_PATH).saveFeedback(feedback);
 }
 
 /**
@@ -1917,6 +1837,109 @@ function getDigestFeedback(options = {}) {
   }));
 }
 
+// ── Quality profile ─────────────────────────────────────────────────────────
+
+/**
+ * Compute a per-member quality profile from the content store index.
+ * Analyzes conversation entries to find patterns in what's captured vs missing.
+ * @param {Object} [options]
+ * @param {string} [options.storePath] - Content store directory
+ * @param {number} [options.days] - Look back N days (default: 30)
+ * @returns {{ totalDecisions: number, rich: number, thin: number, richRate: number,
+ *             reasoning: { present: number, missing: number, rate: number },
+ *             alternatives: { present: number, missing: number, rate: number },
+ *             weeklyTrend: Array<{ week: string, richRate: number, count: number }>,
+ *             focus: string[] }}
+ */
+function computeQualityProfile(options = {}) {
+  const storePath = options.storePath || DEFAULT_STORE_PATH;
+  const days = options.days || 30;
+  const index = getBackend(storePath).loadIndex();
+
+  if (!index || index.entryCount === 0) {
+    return {
+      totalDecisions: 0, rich: 0, thin: 0, richRate: 0,
+      reasoning: { present: 0, missing: 0, rate: 0 },
+      alternatives: { present: 0, missing: 0, rate: 0 },
+      weeklyTrend: [],
+      focus: [],
+    };
+  }
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const entries = Object.values(index.entries)
+    .filter(e => e.source === 'conversation' && e.date >= cutoffStr);
+
+  const totalDecisions = entries.length;
+  const withReasoning = entries.filter(e => e.hasReasoning).length;
+  const withAlternatives = entries.filter(e => e.hasAlternatives).length;
+  const rich = entries.filter(e => e.hasReasoning || e.hasAlternatives).length;
+  const thin = totalDecisions - rich;
+  const richRate = totalDecisions > 0 ? Math.round((rich / totalDecisions) * 100) : 0;
+
+  // Weekly trend
+  const weekBuckets = {};
+  for (const entry of entries) {
+    const d = new Date(entry.date);
+    // ISO week start (Monday)
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const weekStart = new Date(d);
+    weekStart.setDate(diff);
+    const weekKey = weekStart.toISOString().slice(0, 10);
+    if (!weekBuckets[weekKey]) weekBuckets[weekKey] = { rich: 0, total: 0 };
+    weekBuckets[weekKey].total++;
+    if (entry.hasReasoning || entry.hasAlternatives) weekBuckets[weekKey].rich++;
+  }
+  const weeklyTrend = Object.entries(weekBuckets)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([week, { rich: r, total }]) => ({
+      week,
+      richRate: total > 0 ? Math.round((r / total) * 100) : 0,
+      count: total,
+    }));
+
+  // Determine focus areas — what's missing most
+  const focus = [];
+  const reasoningRate = totalDecisions > 0 ? Math.round((withReasoning / totalDecisions) * 100) : 0;
+  const alternativesRate = totalDecisions > 0 ? Math.round((withAlternatives / totalDecisions) * 100) : 0;
+
+  if (alternativesRate < 40) {
+    focus.push('alternatives considered — you tend to record what was chosen but not what was rejected');
+  }
+  if (reasoningRate < 50) {
+    focus.push('reasoning and constraints — capture why, not just what');
+  }
+  if (alternativesRate >= 40 && reasoningRate >= 50 && richRate < 70) {
+    focus.push('depth on both dimensions — you capture some context but could go deeper');
+  }
+  if (richRate >= 70) {
+    focus.push('keep it up — your decision context is strong');
+  }
+
+  return {
+    totalDecisions,
+    rich,
+    thin,
+    richRate,
+    reasoning: {
+      present: withReasoning,
+      missing: totalDecisions - withReasoning,
+      rate: reasoningRate,
+    },
+    alternatives: {
+      present: withAlternatives,
+      missing: totalDecisions - withAlternatives,
+      rate: alternativesRate,
+    },
+    weeklyTrend,
+    focus,
+  };
+}
+
 // ── Exports ─────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -1934,13 +1957,16 @@ module.exports = {
   extractDecisions,
   projectDirToRepo,
 
-  // Storage
-  loadIndex,
-  saveIndex,
-  loadEmbeddings,
-  saveEmbeddings,
-  loadConversationIndex,
-  saveConversationIndex,
+  // Storage backend
+  getBackend,
+  getBackendType,
+  // Backward-compatible storage wrappers (delegate to backend)
+  loadIndex: (storePath) => getBackend(storePath || DEFAULT_STORE_PATH).loadIndex(),
+  saveIndex: (storePath, index) => getBackend(storePath || DEFAULT_STORE_PATH).saveIndex(index),
+  loadEmbeddings: (storePath) => getBackend(storePath || DEFAULT_STORE_PATH).loadEmbeddings(),
+  saveEmbeddings: (storePath, embeddings) => getBackend(storePath || DEFAULT_STORE_PATH).saveEmbeddings(embeddings),
+  loadConversationIndex: (storePath) => getBackend(storePath || DEFAULT_STORE_PATH).loadConversationIndex(),
+  saveConversationIndex: (storePath, convIndex) => getBackend(storePath || DEFAULT_STORE_PATH).saveConversationIndex(convIndex),
 
   // Filtering
   applyFilters,
@@ -1958,6 +1984,7 @@ module.exports = {
   searchText,
   queryMetadata,
   extractInsights,
+  computeQualityProfile,
   getEntryContent,
 
   // Constants (for testing)

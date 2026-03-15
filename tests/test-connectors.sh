@@ -89,7 +89,7 @@ cat > "$TEST_HOME/.claude/meridian/connectors.json" << 'CONNEOF'
   "github": {
     "transport": "simulate",
     "repos": [
-      { "owner": "acme-corp", "repo": "webhook-service" }
+      { "owner": "HopSkipInc", "repo": "EventSubscriptionService" }
     ],
     "configured_at": "2026-03-01T10:00:00Z",
     "last_pull": null
@@ -107,7 +107,7 @@ assert_contains "pull output shows CI runs" "CI runs:" "$PULL_OUTPUT"
 
 # Check signal files were created (file named by today's date, not since date)
 TODAY_DATE=$(date +%Y-%m-%d)
-SIGNAL_FILE="$TEST_HOME/.claude/meridian/signals/github/acme-corp/webhook-service/${TODAY_DATE}.md"
+SIGNAL_FILE="$TEST_HOME/.claude/meridian/signals/github/HopSkipInc/EventSubscriptionService/${TODAY_DATE}.md"
 if [ -f "$SIGNAL_FILE" ]; then
     PASS=$((PASS+1)); echo "  ✓ signal file created"
     assert_contains "signal file has PR section" "## Pull Requests" "$(cat "$SIGNAL_FILE")"
@@ -136,20 +136,20 @@ assert_contains "signals shows repo count" "repo(s)" "$SIGNALS_OUTPUT"
 # Test --add-repo
 echo ""
 echo "Add/Remove Repo:"
-ADD_OUTPUT=$(node "$SCRIPT_DIR/bin/meridian.js" pull github --add-repo acme-corp/NewService 2>&1) || true
+ADD_OUTPUT=$(node "$SCRIPT_DIR/bin/meridian.js" pull github --add-repo HopSkipInc/NewService 2>&1) || true
 assert_contains "add-repo confirms addition" "Added" "$ADD_OUTPUT"
 
 # Verify it was added
 CONFIG_CHECK=$(node -e "
 const fs = require('fs');
 const config = JSON.parse(fs.readFileSync('$TEST_HOME/.claude/meridian/connectors.json', 'utf8'));
-const found = config.github.repos.some(r => r.owner === 'acme-corp' && r.repo === 'NewService');
+const found = config.github.repos.some(r => r.owner === 'HopSkipInc' && r.repo === 'NewService');
 console.log(found ? 'FOUND' : 'NOT_FOUND');
 " 2>&1)
 assert_eq "add-repo persisted to config" "FOUND" "$CONFIG_CHECK"
 
 # Test --remove-repo
-REMOVE_OUTPUT=$(node "$SCRIPT_DIR/bin/meridian.js" pull github --remove-repo acme-corp/NewService 2>&1) || true
+REMOVE_OUTPUT=$(node "$SCRIPT_DIR/bin/meridian.js" pull github --remove-repo HopSkipInc/NewService 2>&1) || true
 assert_contains "remove-repo confirms removal" "Removed" "$REMOVE_OUTPUT"
 
 # Test: ensureContainerConfig builds correct GitHub config from env vars
@@ -218,7 +218,7 @@ cat > "$TEST_PULL_HOME/.claude/meridian/connectors.json" << 'PULLEOF'
   "github": {
     "transport": "https",
     "token": "ghp_simulated",
-    "repos": ["acme-corp/webhook-service"],
+    "repos": ["HopSkipInc/EventSubscriptionService"],
     "last_pull": null
   }
 }

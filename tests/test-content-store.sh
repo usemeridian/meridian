@@ -253,24 +253,31 @@ else
     _fail "indexJournals creates index" "Unexpected result: $RESULT"
 fi
 
-# Verify files exist
-if [ -f "$STORE_DIR/index.json" ]; then
-    _pass "index.json created"
+# Verify store was created (files for JSON, DB for SQLite)
+RESULT=$(node -e "
+  const { getBackend } = require('$REPO_ROOT/bin/storage');
+  const b = getBackend('$STORE_DIR');
+  const index = b.loadIndex();
+  console.log('HAS_INDEX:' + (index !== null));
+  const emb = b.loadEmbeddings();
+  console.log('HAS_EMB:' + (typeof emb === 'object'));
+")
+if echo "$RESULT" | grep -qF "HAS_INDEX:true"; then
+    _pass "store index created"
 else
-    _fail "index.json created" "File not found"
+    _fail "store index created" "Index not found"
 fi
-
-if [ -f "$STORE_DIR/embeddings.json" ]; then
-    _pass "embeddings.json created"
+if echo "$RESULT" | grep -qF "HAS_EMB:true"; then
+    _pass "store embeddings created"
 else
-    _fail "embeddings.json created" "File not found"
+    _fail "store embeddings created" "Embeddings not found"
 fi
 
 echo ""
 echo "Test: index has v2 schema"
 RESULT=$(node -e "
-  const fs = require('fs');
-  const index = JSON.parse(fs.readFileSync('$STORE_DIR/index.json', 'utf8'));
+  const { getBackend } = require('$REPO_ROOT/bin/storage');
+  const index = getBackend('$STORE_DIR').loadIndex();
   console.log('VERSION:' + index.version);
   console.log('COUNT:' + index.entryCount);
   console.log('HAS_ENTRIES:' + (typeof index.entries === 'object'));
@@ -284,8 +291,8 @@ fi
 echo ""
 echo "Test: entries have correct fields"
 RESULT=$(node -e "
-  const fs = require('fs');
-  const index = JSON.parse(fs.readFileSync('$STORE_DIR/index.json', 'utf8'));
+  const { getBackend } = require('$REPO_ROOT/bin/storage');
+  const index = getBackend('$STORE_DIR').loadIndex();
   const first = Object.values(index.entries)[0];
   console.log('HAS_DATE:' + (typeof first.date === 'string'));
   console.log('HAS_REPO:' + (typeof first.repo === 'string'));
@@ -762,15 +769,22 @@ fi
 
 echo ""
 echo "Test: file permissions are restricted"
+# Check whichever file exists: index.json (JSON backend) or content-store.db (SQLite)
+STORE_FILE=""
 if [ -f "$STORE_DIR/index.json" ]; then
-    PERMS=$(stat -c '%a' "$STORE_DIR/index.json" 2>/dev/null || stat -f '%Lp' "$STORE_DIR/index.json" 2>/dev/null || echo "unknown")
+    STORE_FILE="$STORE_DIR/index.json"
+elif [ -f "$STORE_DIR/content-store.db" ]; then
+    STORE_FILE="$STORE_DIR/content-store.db"
+fi
+if [ -n "$STORE_FILE" ]; then
+    PERMS=$(stat -c '%a' "$STORE_FILE" 2>/dev/null || stat -f '%Lp' "$STORE_FILE" 2>/dev/null || echo "unknown")
     if [ "$PERMS" = "600" ]; then
         _pass "file permissions 600"
     else
         _fail "file permissions 600" "Expected 600, got: $PERMS"
     fi
 else
-    _fail "file permissions 600" "index.json not found"
+    _fail "file permissions 600" "No store file found"
 fi
 
 # Clean up test malformed file
@@ -793,7 +807,7 @@ cat > "$JOURNAL_DIR/2026-03-01-greg.md" << 'EOF'
 EOF
 
 cat > "$JOURNAL_DIR/2026-03-01-nick.md" << 'EOF'
-## report-service — Fix PDF generation
+## ReportService — Fix PDF generation
 **Why:** PDF exports were broken
 **What:** Fixed template rendering pipeline
 **Outcome:** PDFs generate correctly now
@@ -811,7 +825,7 @@ cat > "$JOURNAL_DIR/2026-03-02.md" << 'EOF'
 **Lessons:** Keep docs current
 
 **Author:** nick
-## web-api — API refactor
+## SellingService — API refactor
 **Why:** Clean up legacy endpoints
 **What:** Refactored 3 endpoints
 **Outcome:** Cleaner API surface
@@ -884,8 +898,8 @@ RESULT=$(node -e "
     embeddings: false,
     defaultAuthor: 'fallback-user',
   }).then(() => {
-    const index = JSON.parse(require('fs').readFileSync('$AUTHOR_STORE/index.json', 'utf8'));
-    // Find an entry from 2026-02-24 (plain date file, no author in filename or content)
+    const { getBackend } = require('$REPO_ROOT/bin/storage');
+    const index = getBackend('$AUTHOR_STORE').loadIndex();
     const entries = Object.values(index.entries);
     const plainEntry = entries.find(e => e.date === '2026-02-24');
     const authoredEntry = entries.find(e => e.date === '2026-03-01' && e.user === 'greg');
@@ -954,8 +968,8 @@ fi
 echo ""
 echo "Test: indexJournals stores user in index"
 RESULT=$(node -e "
-  const fs = require('fs');
-  const index = JSON.parse(fs.readFileSync('$AUTHOR_STORE/index.json', 'utf8'));
+  const { getBackend } = require('$REPO_ROOT/bin/storage');
+  const index = getBackend('$AUTHOR_STORE').loadIndex();
   const entries = Object.values(index.entries);
   const gregEntry = entries.find(e => e.user === 'greg');
   const nickEntry = entries.find(e => e.user === 'nick');
@@ -989,8 +1003,8 @@ echo ""
 echo "Test: getEntryContent returns author in content for authored files"
 RESULT=$(node -e "
   const cs = require('$REPO_ROOT/bin/content-store.js');
-  const fs = require('fs');
-  const index = JSON.parse(fs.readFileSync('$AUTHOR_STORE/index.json', 'utf8'));
+  const { getBackend } = require('$REPO_ROOT/bin/storage');
+  const index = getBackend('$AUTHOR_STORE').loadIndex();
   const gregEntryId = Object.keys(index.entries).find(id => index.entries[id].user === 'greg');
   if (!gregEntryId) { console.log('NO_GREG_ENTRY'); process.exit(0); }
   const content = cs.getEntryContent(gregEntryId, { storePath: '$AUTHOR_STORE', journalDir: '$JOURNAL_DIR' });
@@ -1060,8 +1074,8 @@ echo ""
 echo "Test: getEntryContent retrieves signal content"
 RESULT=$(node -e "
   const cs = require('$REPO_ROOT/bin/content-store.js');
-  const fs = require('fs');
-  const index = JSON.parse(fs.readFileSync('$SIGNAL_STORE/index.json', 'utf8'));
+  const { getBackend } = require('$REPO_ROOT/bin/storage');
+  const index = getBackend('$SIGNAL_STORE').loadIndex();
   // Find a signal entry
   const signalEntry = Object.entries(index.entries).find(([id, e]) => e.source === 'signal');
   if (!signalEntry) { console.log('NO_SIGNAL_ENTRY'); process.exit(0); }

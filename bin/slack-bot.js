@@ -660,6 +660,242 @@ function resolvePromptsDir() {
   return null;
 }
 
+// ── Direct commands (no LLM needed) ─────────────────────────────────────────
+
+/**
+ * Resolve the team-context members directory from environment or config.
+ * @param {Object} config - Bot config
+ * @returns {string|null}
+ */
+function resolveMembersDir(config) {
+  const teamDir = config.team_context_dir || process.env.MERIDIAN_TEAM_CONTEXT_DIR || '';
+  if (teamDir) {
+    const dir = path.join(teamDir, 'members');
+    if (fs.existsSync(dir)) return dir;
+  }
+  return null;
+}
+
+/**
+ * Handle direct bot commands that don't require LLM synthesis.
+ * Returns formatted text if the query matches a command, or null to fall through.
+ * @param {string} query - User's question
+ * @param {Object} config - Bot config
+ * @returns {string|null}
+ */
+function handleDirectCommand(query, config) {
+  const q = query.trim().toLowerCase();
+
+  // help
+  if (q === 'help' || q === '?' || q === 'commands') {
+    return handleHelp();
+  }
+
+  // version
+  if (q === 'version' || q === 'what version' || q === 'what version are you') {
+    return handleVersion();
+  }
+
+  // members
+  if (q === 'members' || q === 'team members' || q === 'who is on the team' ||
+      /^(?:show|list|get)\s+(?:team\s+)?members$/i.test(query.trim()) ||
+      /^(?:what|which)\s+version\s+is\s+\w+\s+(?:on|running|using)/i.test(query.trim()) ||
+      /^(?:who|what)\s+version/i.test(query.trim())) {
+    return handleMembers(config);
+  }
+
+  // insights
+  if (q === 'insights' || q === 'journal insights' || q === 'show insights' ||
+      /^(?:show|get)\s+(?:journal\s+)?insights$/i.test(query.trim())) {
+    return handleInsights(config);
+  }
+
+  // digest scores / feedback
+  if (q === 'digest scores' || q === 'scores' || q === 'digest feedback' ||
+      /^(?:show|get)\s+(?:digest\s+)?(?:scores|feedback)$/i.test(query.trim())) {
+    return handleDigestScores(config);
+  }
+
+  // signals
+  if (q === 'signals' || q === 'show signals' || q === 'signal channels' ||
+      /^(?:show|list|get)\s+(?:signal\s+)?channels$/i.test(query.trim())) {
+    return handleSignalChannels();
+  }
+
+  return null;
+}
+
+/** Bot help command — lists available capabilities. */
+function handleHelp() {
+  return `*Meridian Bot — Commands*
+
+You can ask me anything about your team's decision trail, or use these commands:
+
+*Queries*
+• Ask any question — I'll search journals and synthesize an answer
+• Use dates naturally: "what happened yesterday", "this week", "March 3-6"
+• Thread replies continue the conversation without re-mentioning me
+
+*Commands*
+• \`help\` — this message
+• \`version\` — bot version
+• \`members\` — team members, versions, and activity
+• \`insights\` — journal analytics (session count, drift rate, repo activity)
+• \`digest scores\` — digest feedback and reactions
+• \`signals\` — configured signal channels
+• \`onboard <repo>\` — generate an onboarding context pack
+• \`reindex\` — re-index all sources
+• \`prompts\` — list shared team prompts
+• \`show <name> prompt\` — show a specific prompt`;
+}
+
+/** Bot version command. */
+function handleVersion() {
+  const version = telemetry.getMeridianVersion();
+  return `Meridian v${version}`;
+}
+
+/** Bot members command — reads member profiles from team-context repo. */
+function handleMembers(config) {
+  const membersDir = resolveMembersDir(config);
+  if (!membersDir) {
+    return 'No team members directory found. Set `MERIDIAN_TEAM_CONTEXT_DIR` or configure `team_context_dir` in the bot config.';
+  }
+
+  let files;
+  try {
+    files = fs.readdirSync(membersDir).filter(f => f.endsWith('.json'));
+  } catch {
+    return 'Could not read team members directory.';
+  }
+
+  if (files.length === 0) {
+    return 'No team members found. Members register via `meridian whoami --setup`.';
+  }
+
+  const lines = ['*Team Members*\n'];
+  for (const file of files.sort()) {
+    try {
+      const member = JSON.parse(fs.readFileSync(path.join(membersDir, file), 'utf8'));
+      const name = member.name || file.replace('.json', '');
+      const version = member.meridian_version ? `v${member.meridian_version}` : '?';
+      const lastActive = member.last_active ? member.last_active.slice(0, 10) : '—';
+      const personas = (member.personas || []).join(', ') || '—';
+      const slackId = member.slack_id ? `<@${member.slack_id}>` : '';
+      lines.push(`• *${name}* ${slackId} — ${version} — active: ${lastActive} — personas: ${personas}`);
+    } catch {
+      // Skip unreadable files
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/** Bot insights command — journal analytics. */
+function handleInsights(config) {
+  const opts = {};
+  if (config.store_path) opts.storePath = config.store_path;
+
+  const insights = contentStore.extractInsights(opts);
+
+  const lines = ['*Journal Insights*\n'];
+  lines.push(`Total sessions: ${insights.totalSessions}`);
+  lines.push(`Drift rate: ${insights.driftRate}%`);
+
+  if (Object.keys(insights.repoActivity).length > 0) {
+    lines.push('\n*Repo activity:*');
+    const sorted = Object.entries(insights.repoActivity).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    for (const [repo, count] of sorted) {
+      lines.push(`  ${repo} — ${count} session(s)`);
+    }
+  }
+
+  if (Object.keys(insights.tagFrequency).length > 0) {
+    lines.push('\n*Top tags:*');
+    const sorted = Object.entries(insights.tagFrequency).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    for (const [tag, count] of sorted) {
+      lines.push(`  ${tag} — ${count}`);
+    }
+  }
+
+  if (insights.timeline.length > 0) {
+    lines.push('\n*Recent activity (last 7 days):*');
+    const recent = insights.timeline.slice(-7);
+    for (const { date, sessions } of recent) {
+      const bar = '\u2588'.repeat(Math.min(sessions, 20));
+      lines.push(`  ${date} ${bar} ${sessions}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/** Bot digest scores command — feedback and reactions. */
+function handleDigestScores(config) {
+  const opts = { limit: 10 };
+  if (config.store_path) opts.storePath = config.store_path;
+
+  const feedback = contentStore.getDigestFeedback(opts);
+  if (feedback.length === 0) {
+    return 'No digest feedback yet. Reactions on digest messages will appear here.';
+  }
+
+  const lines = ['*Digest Feedback*\n'];
+  for (const d of feedback) {
+    const reactions = Object.entries(d.reactions)
+      .map(([emoji, count]) => `:${emoji}: \u00d7 ${count}`)
+      .join('  ');
+    lines.push(`• ${d.date} (${d.persona}): ${reactions || 'no reactions'} — total: ${d.totalReactions}`);
+    if (d.comments.length > 0) {
+      for (const c of d.comments) {
+        lines.push(`    \u2192 "${c.text}"`);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/** Bot signals command — show configured signal channels. */
+function handleSignalChannels() {
+  const signalsDir = process.env.MERIDIAN_SIGNALS_DIR || path.join(
+    process.env.HOME || process.env.USERPROFILE || '',
+    '.claude', 'meridian', 'signals'
+  );
+
+  if (!fs.existsSync(signalsDir)) {
+    return 'No signal channels configured. Set up channels with `meridian pull <channel> --configure`.';
+  }
+
+  let channels;
+  try {
+    channels = fs.readdirSync(signalsDir).filter(f => {
+      try { return fs.statSync(path.join(signalsDir, f)).isDirectory(); } catch { return false; }
+    });
+  } catch {
+    return 'Could not read signals directory.';
+  }
+
+  if (channels.length === 0) {
+    return 'No signal channels found. Set up channels with `meridian pull <channel> --configure`.';
+  }
+
+  const lines = ['*Signal Channels*\n'];
+  for (const ch of channels.sort()) {
+    const chDir = path.join(signalsDir, ch);
+    let fileCount = 0;
+    let latestFile = null;
+    try {
+      const files = fs.readdirSync(chDir).filter(f => f.endsWith('.md')).sort();
+      fileCount = files.length;
+      latestFile = files.length > 0 ? files[files.length - 1].replace('.md', '') : null;
+    } catch { /* skip */ }
+    lines.push(`• *${ch}* — ${fileCount} file(s)${latestFile ? ` — latest: ${latestFile}` : ''}`);
+  }
+
+  return lines.join('\n');
+}
+
 /**
  * Handle prompt-related queries directly from the filesystem.
  * Returns formatted text if the query matches a prompt pattern, or null to fall through.
@@ -716,6 +952,12 @@ function handlePromptQuery(query) {
  */
 async function handleQuery(query, config, threadHistory) {
   const queryStart = Date.now();
+
+  // Check direct commands first — no LLM needed
+  const directResult = handleDirectCommand(query, config);
+  if (directResult) {
+    return { text: directResult, results: [], _directCommand: true };
+  }
 
   // Check if this is a prompt query — answer directly without LLM
   const promptResult = handlePromptQuery(query);
@@ -979,7 +1221,9 @@ async function start(config) {
 
       const result = await handleQuery(query, config, threadHistory);
       const authorSlug = telemetry.resolveSlackUser(event.user, membersDir);
-      if (result._promptQuery) {
+      if (result._directCommand) {
+        telemetry.capture('bot_direct_command', { query: query.toLowerCase().slice(0, 50) }, authorSlug);
+      } else if (result._promptQuery) {
         telemetry.capture('bot_prompt_query', { found: true }, authorSlug);
       } else if (result._telemetry) {
         telemetry.capture('bot_query', result._telemetry, authorSlug);
@@ -1065,7 +1309,9 @@ async function start(config) {
       const threadHistory = await fetchThreadHistory(client, channel, threadTs, botUserId, event.ts);
       const result = await handleQuery(query, config, threadHistory);
       const authorSlug = telemetry.resolveSlackUser(event.user, membersDir);
-      if (result._promptQuery) {
+      if (result._directCommand) {
+        telemetry.capture('bot_direct_command', { query: query.toLowerCase().slice(0, 50) }, authorSlug);
+      } else if (result._promptQuery) {
         telemetry.capture('bot_prompt_query', { found: true }, authorSlug);
       } else if (result._telemetry) {
         telemetry.capture('bot_query', result._telemetry, authorSlug);
@@ -1278,6 +1524,7 @@ module.exports = {
   start,
   getConnectionStatus,
   handleQuery,
+  handleDirectCommand,
   formatResponse,
   extractQuery,
   chunkMessage,

@@ -17,7 +17,7 @@ const os = require('os');
 const crypto = require('crypto');
 
 // Load API key
-const envFile = fs.readFileSync(path.join(process.env.HOME, '.config/meridian/.env'), 'utf8');
+const envFile = fs.readFileSync(path.join(process.env.HOME, '.config/hopskip/.env'), 'utf8');
 for (const line of envFile.split('\n')) {
   const m = line.match(/^(export\s+)?(\w+)=(.+)$/);
   if (m) process.env[m[2]] = m[3].replace(/^["']|["']$/g, '');
